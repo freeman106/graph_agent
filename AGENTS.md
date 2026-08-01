@@ -141,7 +141,9 @@ readFileSync(p, 'utf-8').replace(/^\uFEFF/, '')
 
 ### 여러 명이 건드리는 파일 — 최소화한다
 
-`package.json`, `.gitignore`, `AGENTS.md`, `README.md` 네 개뿐이다.
+`package.json`, `.gitignore`, `AGENTS.md`, `CLAUDE.md`, `README.md` 다섯 개뿐이다.
+(`CLAUDE.md` 는 `AGENTS.md` 를 가리키는 다리다 — Claude Code 는 `CLAUDE.md`, Codex CLI 는
+`AGENTS.md` 를 읽는다. 규칙 본문은 `AGENTS.md` 한 곳에만 둔다.)
 **수정 전에 팀에 알린다.** 이 파일들은 기반이 잡힌 뒤로는 거의 바뀌지 않아야 한다.
 
 `agent/state/`와 `.env`는 git에 올라가지 않으므로 충돌하지 않는다.
