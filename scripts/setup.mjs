@@ -71,14 +71,25 @@ if (existsSync(path.join(ROOT, '.git'))) {
 
 /* ── 3. Python venv ──────────────────────────────────────── */
 heading('3/5  Python 가상환경');
-const sys = findSystemPython();
+const { chosen: sys, attempts } = findSystemPython();
 if (!sys) {
-  die(
-    'Python 을 찾지 못했습니다.',
-    'Windows: python.org 에서 설치하고 "Add python.exe to PATH" 를 체크하세요. ' +
-      'Microsoft Store 버전은 쓰지 마세요.',
-  );
+  console.error(`${c.red('✗')} 쓸 수 있는 Python 을 찾지 못했습니다. 시도한 것:`);
+  for (const a of attempts) {
+    console.error(`    ${c.dim(a.label.padEnd(16))} → ${a.result}`);
+  }
+  console.error('');
+  console.error(`  ${c.bold('ENOENT')} 만 보인다면 Python 이 PATH 에 없습니다:`);
+  console.error(`    ${c.dim('· 방금 설치했다면 터미널을 새로 여세요 (PATH 갱신)')}`);
+  console.error(`    ${c.dim('· python.org 설치 시 "Add python.exe to PATH" 를 체크했는지 확인')}`);
+  console.error(`    ${c.dim('· where python / where py 로 실제 위치를 확인해보세요')}`);
+  console.error(`  ${c.bold('버전은 찍히는데 여기까지 왔다면')} 그 출력을 A 에게 그대로 보내주세요.`);
   process.exit(1);
+}
+if (sys.isStore) {
+  console.log(
+    `${c.yellow('!')} Microsoft Store 파이썬을 씁니다 — venv 생성이 실패하면 ` +
+      `python.org 버전으로 다시 설치하세요.`,
+  );
 }
 
 const [minLo, minHi] = PYTHON_MIN;
@@ -96,7 +107,7 @@ console.log(`${c.green('✓')} Python ${sys.major}.${sys.minor} (${sys.cmd})`);
 
 if (!venvExists()) {
   console.log(`  ${c.dim('.venv 생성 중...')}`);
-  const code = run(sys.cmd, [...sys.prefix, '-m', 'venv', '.venv']);
+  const code = run(sys.cmd, [...sys.prefix, '-m', 'venv', '.venv'], { shell: sys.useShell });
   if (code !== 0 || !venvExists()) {
     die('.venv 생성 실패');
     process.exit(1);

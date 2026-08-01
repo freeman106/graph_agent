@@ -18,6 +18,7 @@ import {
   capture,
   loadDotEnv,
   pythonEnv,
+  findSystemPython,
   venvExists,
   venvPython,
 } from './lib.mjs';
@@ -67,6 +68,22 @@ existsSync(path.join(ROOT, 'node_modules'))
 /* ── Python ──────────────────────────────────────────────── */
 if (!venvExists()) {
   bad('.venv', '없음', 'npm run setup');
+  // 왜 못 만들었는지 바로 보이게 시스템 파이썬 탐색 결과를 같이 찍는다.
+  const { chosen, attempts } = findSystemPython();
+  for (const a of attempts) {
+    results.push({
+      level: chosen && a.result.startsWith('Python') ? 'ok' : 'warn',
+      name: `  python 탐색: ${a.label}`,
+      detail: a.result,
+    });
+  }
+  if (!chosen) {
+    results.push({
+      level: 'bad',
+      name: '  → 결론',
+      detail: 'ENOENT 만 보이면 PATH 문제입니다. 터미널을 새로 열거나 Python 을 PATH 포함으로 재설치하세요.',
+    });
+  }
 } else {
   ok('.venv', venvPython().replace(ROOT + path.sep, ''));
 

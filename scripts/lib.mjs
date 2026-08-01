@@ -56,36 +56,81 @@ export function venvExists() {
 /**
  * venv 를 만들 시스템 파이썬을 찾는다.
  *
- * Windows 에서는 `py -3` 런처가 가장 안정적이다. `python` 은 Microsoft Store
- * 스텁일 수 있는데(실행하면 스토어가 열린다) 그 경우를 걸러낸다.
+ * Windows 에서 "파이썬이 깔려 있는데 못 찾는" 경우가 세 가지 있다:
+ *   1. 설치 후 터미널을 새로 열지 않아 PATH 가 갱신되지 않음
+ *   2. pyenv-win / 일부 conda 처럼 python 이 .bat/.cmd 심 인 경우
+ *      — Node 의 spawn 은 shell:false 로 .bat 을 실행하지 못한다 (ENOENT)
+ *   3. Microsoft Store 앱 실행 별칭(스텁) — 실행하면 스토어가 열린다
+ *
+ * 2번을 위해 shell 폴백을 두고, 3번은 "거부" 가 아니라 "후순위" 로 둔다.
+ * 실제로 설치된 Store 파이썬은 대개 동작하므로, 다른 후보가 없으면 그거라도 쓴다.
+ *
+ * 반환: { chosen, attempts } — 실패해도 attempts 로 원인을 보여줄 수 있다.
  */
 export function findSystemPython() {
+  // 공백이 없는 프로브. shell:true 폴백에서 따옴표 문제가 생기지 않게 한다.
+  const PROBE =
+    'import sys;print(sys.version_info[0]);print(sys.version_info[1]);print(sys.executable)';
+
   const candidates = IS_WINDOWS
     ? [
         ['py', ['-3']],
         ['python', []],
         ['python3', []],
+        ['py', []],
       ]
     : [
         ['python3', []],
         ['python', []],
       ];
 
+  const attempts = [];
+  const found = [];
+
   for (const [cmd, prefix] of candidates) {
-    const probe = spawnSync(cmd, [...prefix, '-c', 'import sys,os;print(sys.version_info[0],sys.version_info[1]);print(sys.executable)'], {
-      encoding: 'utf-8',
-      shell: false,
-    });
-    if (probe.status !== 0 || !probe.stdout) continue;
+    // shell:false 우선, 실패하면 Windows 에서 .bat/.cmd 심 을 위해 shell:true 재시도
+    for (const useShell of IS_WINDOWS ? [false, true] : [false]) {
+      const probe = spawnSync(cmd, [...prefix, '-c', PROBE], {
+        encoding: 'utf-8',
+        shell: useShell,
+        windowsHide: true,
+      });
 
-    const [versionLine, exeLine = ''] = probe.stdout.trim().split(/\r?\n/);
-    // Microsoft Store 스텁 걸러내기
-    if (exeLine.includes('WindowsApps')) continue;
+      const label = `${cmd} ${prefix.join(' ')}`.trim() + (useShell ? ' (shell)' : '');
 
-    const [major, minor] = versionLine.trim().split(/\s+/).map(Number);
-    return { cmd, prefix, major, minor, executable: exeLine.trim() };
+      if (probe.error) {
+        attempts.push({ label, result: probe.error.code ?? probe.error.message });
+        continue;
+      }
+      if (probe.status !== 0 || !probe.stdout?.trim()) {
+        const why = (probe.stderr ?? '').trim().split(/\r?\n/)[0] || `종료코드 ${probe.status}`;
+        attempts.push({ label, result: why });
+        continue;
+      }
+
+      const [major, minor, executable = ''] = probe.stdout.trim().split(/\r?\n/);
+      const isStore = executable.includes('WindowsApps');
+      attempts.push({
+        label,
+        result: `Python ${major}.${minor}${isStore ? ' (Microsoft Store)' : ''} — ${executable}`,
+      });
+
+      found.push({
+        cmd,
+        prefix,
+        useShell,
+        major: Number(major),
+        minor: Number(minor),
+        executable: executable.trim(),
+        isStore,
+      });
+      break; // 이 명령어는 찾았으니 shell 재시도 불필요
+    }
   }
-  return null;
+
+  // Store 가 아닌 것을 우선한다. 없으면 Store 라도 쓴다.
+  const chosen = found.find((f) => !f.isStore) ?? found[0] ?? null;
+  return { chosen, attempts };
 }
 
 /* ── .env ───────────────────────────────────────────────── */

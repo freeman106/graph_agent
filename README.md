@@ -185,7 +185,7 @@ npm run dev
 
 | 증상 | 원인과 조치 |
 |---|---|
-| `Python 을 찾지 못했습니다` | PATH 미반영 → 터미널 새로 열기. 또는 Microsoft Store 버전 |
+| `쓸 수 있는 Python 을 찾지 못했습니다` | 시도한 명령과 결과가 같이 출력된다. 전부 `ENOENT` 면 PATH 문제 → **터미널을 새로 열어라** (설치 직후 PATH가 반영 안 됨). 그래도 안 되면 그 출력을 A에게 보낼 것 |
 | `.venv 생성 실패` | Microsoft Store 파이썬. python.org 버전으로 재설치 |
 | `Python 패키지 ... ≠ ...` | `npm run setup` 다시 |
 | `한국어 인코딩 왕복` 실패 | 파이썬을 직접 불렀다. `npm run agent`를 쓴다 |
@@ -200,5 +200,6 @@ npm run dev
 | PowerShell에서 `npm : 이 시스템에서 스크립트를 실행할 수 없으므로` | 실행 정책 차단. **명령 프롬프트(cmd)를 쓰거나** `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` |
 | 콘솔 출력의 한글만 깨져 보임 (파일은 멀쩡) | 콘솔 코드페이지가 949. **Windows Terminal**을 쓰거나 `chcp 65001` 먼저 실행. `npm run check`가 감지해서 알려준다 |
 | `py` 를 찾을 수 없음 | Python 설치 시 py 런처를 뺐다. `python` 으로도 동작하니 `npm run setup` 을 그냥 돌려본다 |
+| Python이 깔려 있는데 못 찾는다고 나옴 | 세 가지 중 하나다. ① 터미널을 안 새로 열어 PATH 미반영 ② pyenv-win 처럼 `python`이 `.bat` 심 ③ Microsoft Store 버전. `npm run check`가 시도한 명령과 결과를 전부 찍어주니 그걸 보면 구분된다 |
 | venv 생성이나 pip 설치가 이상하게 실패 | 클론 경로에 한글/공백이 있을 수 있다. `C:\dev\graph_agent` 같은 영문 경로로 다시 클론. `npm run check`가 경고한다 |
 | 설치가 비정상적으로 느림 | 백신 실시간 검사. 저장소 폴더를 예외로 등록하면 빨라진다 |
