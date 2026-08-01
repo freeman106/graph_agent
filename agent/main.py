@@ -20,8 +20,9 @@ from pathlib import Path
 
 from agents import Agent, ItemHelpers, MaxTurnsExceeded, Runner
 
-from contract.schema import Conversation, LimitPayload
+from contract.schema import Conversation, LimitPayload, Turn
 
+from agent import READ_ENCODING
 from agent import tools as tool_module
 from agent.config import (
     DEFAULT_CONVERSATION,
@@ -324,6 +325,61 @@ def _summarize(output: object, width: int = 120) -> str:
 
 
 # ════════════════════════════════════════════════════════════════
+#  붙여넣은 대화 텍스트 → Conversation
+# ════════════════════════════════════════════════════════════════
+
+# 화자 표기. 사람이 복사해 오는 형태를 그대로 받는다.
+_SPEAKER_PREFIX = {
+    "user": ("나", "저", "사용자", "질문", "me", "user", "you"),
+    "assistant": ("chatgpt", "claude", "gpt", "어시스턴트", "assistant", "ai", "답변"),
+}
+
+
+def parse_pasted(text: str, conversation_id: str = "pasted") -> Conversation:
+    """붙여넣은 대화를 Conversation 으로 만든다.
+
+    "나: ..." / "ChatGPT: ..." 처럼 화자 표기로 시작하는 줄을 턴 경계로 본다.
+    표기가 하나도 없으면 전체를 사용자 발화 한 턴으로 둔다 — 대화가 아니어도
+    최소한 내용은 모델에게 전달된다.
+    """
+    turns: list[Turn] = []
+    speaker: str | None = None
+    buffer: list[str] = []
+
+    def flush_turn() -> None:
+        if speaker is None:
+            return
+        body = "\n".join(buffer).strip()
+        if body:
+            turns.append(Turn(index=len(turns), speaker=speaker, text=body))
+
+    for line in text.splitlines():
+        head, sep, rest = line.partition(":")
+        found = None
+        if sep and len(head) <= 12:
+            key = head.strip().lower()
+            for role, prefixes in _SPEAKER_PREFIX.items():
+                if key in prefixes:
+                    found = role
+                    break
+        if found is not None:
+            flush_turn()
+            speaker = found
+            buffer = [rest.strip()]
+        elif speaker is not None:
+            buffer.append(line)
+
+    flush_turn()
+
+    if not turns:
+        body = text.strip()
+        if body:
+            turns = [Turn(index=0, speaker="user", text=body)]
+
+    return Conversation(id=conversation_id, title="붙여넣은 대화", turns=turns)
+
+
+# ════════════════════════════════════════════════════════════════
 #  오프라인 확인 — API 키 없이 스트림 형식만 본다
 # ════════════════════════════════════════════════════════════════
 
@@ -379,16 +435,32 @@ def main() -> int:
     parser.add_argument(
         "--conversation", type=Path, default=DEFAULT_CONVERSATION, help="대화 JSON 경로"
     )
+    parser.add_argument(
+        "--conversation-text",
+        type=Path,
+        help="붙여넣은 대화 텍스트 파일. 주면 --conversation 대신 이걸 쓴다",
+    )
+    parser.add_argument(
+        "--stream-json",
+        action="store_true",
+        help="사람이 읽는 출력 대신 계약 C 이벤트를 JSONL 로 stdout 에 흘린다",
+    )
     args = parser.parse_args()
 
     if args.reset:
         tool_module.STORE.reset()
-        print(f"그래프를 시드로 되돌렸습니다: {GRAPH_PATH}")
+        if not args.stream_json:
+            print(f"그래프를 시드로 되돌렸습니다: {GRAPH_PATH}")
 
-    conv = load_conversation(args.conversation)
+    if args.conversation_text is not None:
+        conv = parse_pasted(args.conversation_text.read_text(encoding=READ_ENCODING))
+    else:
+        conv = load_conversation(args.conversation)
     before = len(tool_module.STORE.graph.nodes)
 
-    with StreamWriter(show_raw=args.raw, jsonl_path=LAST_RUN_PATH) as writer:
+    with StreamWriter(
+        show_raw=args.raw, jsonl_path=LAST_RUN_PATH, json_stdout=args.stream_json
+    ) as writer:
         if args.offline:
             run_offline(conv, writer)
         else:
@@ -396,11 +468,12 @@ def main() -> int:
 
     store = tool_module.STORE
     after = len(store.graph.nodes)
-    print(
-        f"\n노드 {before} → {after} (+{after - before}) · 간선 {len(store.graph.edges)}"
-        f"\n그래프: {GRAPH_PATH}"
-        f"\n스트림: {LAST_RUN_PATH}"
-    )
+    if not args.stream_json:
+        print(
+            f"\n노드 {before} → {after} (+{after - before}) · 간선 {len(store.graph.edges)}"
+            f"\n그래프: {GRAPH_PATH}"
+            f"\n스트림: {LAST_RUN_PATH}"
+        )
     return 0
 
 

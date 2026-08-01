@@ -21,6 +21,7 @@ import {
   WEAKPOINT_NODE_ID,
 } from './mock';
 import type { RuntimeEdge, RuntimeNode, RuntimeNoteComment, StreamLine, StreamLineKind } from './view';
+import { fetchGraph, probeAgent, runAgent, toStreamLine, type AgentStatus } from './agentApi';
 
 type Phase = 'idle' | 'running' | 'done';
 
@@ -71,11 +72,17 @@ export default function App() {
   const [resolvedWeakpoints, setResolvedWeakpoints] = useState<Set<string>>(() => new Set());
   const [minimapPosition, setMinimapPosition] = useState({ x: 12, y: 12 });
   const [isMinimapDragging, setIsMinimapDragging] = useState(false);
+  // 키가 있는 개발 서버에서만 실제 실행이 붙는다. 없으면 목으로 흐른다.
+  const [agent, setAgent] = useState<AgentStatus>({ available: false });
 
   const lineId = useRef(0);
   const runToken = useRef(0);
   const workspaceRef = useRef<HTMLElement | null>(null);
   const minimapDragRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null);
+
+  useEffect(() => {
+    void probeAgent().then(setAgent);
+  }, []);
 
   useEffect(() => {
     const syncFullscreen = () => setIsFullscreen(document.fullscreenElement === workspaceRef.current);
@@ -280,7 +287,64 @@ export default function App() {
     }
   };
 
+  /**
+   * 실제 에이전트 실행. 개발 서버에 키가 있을 때만 이 경로로 온다.
+   *
+   * 파이프라인 칸은 decision 이 올 때마다 하나씩 올린다 — 모델이 턴을 나누는
+   * 지점이 곧 단계 경계다. 단계를 미리 정해두지 않는다.
+   */
+  const runLive = async (text: string) => {
+    const token = ++runToken.current;
+    const alive = () => runToken.current === token;
+
+    setPasted(text);
+    setPhase('running');
+    setSelectedId(null);
+    setActiveStep(-1);
+    push('system', `대화 입력 감지 — ${text.length.toLocaleString()}자`);
+    push('system', `실제 실행 — OpenAI API (키 …${agent.keyTail ?? ''})`);
+
+    let step = -1;
+    await runAgent(text, {
+      onEvent: (event) => {
+        if (!alive()) return;
+        if (event.kind === 'decision') setActiveStep(++step);
+        const line = toStreamLine(event);
+        if (line) push(line.kind, line.text);
+      },
+      onDone: () => {
+        if (!alive()) return;
+        void fetchGraph().then((graph) => {
+          if (!alive() || !graph) return;
+          // 좌표는 계약에 없다. 새 노드는 프론트가 기존 배치를 보고 자리를 잡는다.
+          setNodes((previous) => {
+            const points = pointsOf(previous);
+            const known = new Set(previous.map((node) => node.id));
+            return graph.nodes.map((node) => {
+              const seen = previous.find((candidate) => candidate.id === node.id);
+              // 새 노드는 이미 자리를 아는 이웃 옆에 붙인다.
+              const anchors = graph.edges
+                .filter((edge) => edge.from_id === node.id || edge.to_id === node.id)
+                .map((edge) => (edge.from_id === node.id ? edge.to_id : edge.from_id));
+              const point = seen ?? NODE_LAYOUT[node.id] ?? placeNewNode(node.id, anchors, points);
+              return { ...node, x: point.x, y: point.y, isNew: !known.has(node.id) };
+            });
+          });
+          setEdges(graph.edges.map((edge) => ({ ...edge })));
+          setPhase('done');
+          push('system', `실행 완료 — 노드 ${graph.nodes.length}개 / 간선 ${graph.edges.length}개`);
+        });
+      },
+      onError: (message) => {
+        if (!alive()) return;
+        push('system', `실행 실패 — ${message}`);
+        setPhase('done');
+      },
+    });
+  };
+
   const run = async (text: string) => {
+    if (agent.available) return runLive(text);
     const token = ++runToken.current;
     const alive = () => runToken.current === token;
 

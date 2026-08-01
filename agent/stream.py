@@ -77,9 +77,17 @@ class StreamWriter:
     콘솔은 show_raw 에 따라 원본 통과분을 보여주거나 감춘다.
     """
 
-    def __init__(self, show_raw: bool = False, jsonl_path: Path | None = None) -> None:
+    def __init__(
+        self,
+        show_raw: bool = False,
+        jsonl_path: Path | None = None,
+        json_stdout: bool = False,
+    ) -> None:
         self.show_raw = show_raw
         self.jsonl_path = jsonl_path
+        # json_stdout: 사람이 읽는 출력 대신 JSONL 한 줄씩을 stdout 으로 흘린다.
+        # 브라우저에서 실행할 때 vite 미들웨어가 이걸 그대로 SSE 로 중계한다.
+        self.json_stdout = json_stdout
         self._seq = 0
         self._fh = None
         if jsonl_path is not None:
@@ -139,6 +147,12 @@ class StreamWriter:
         )
 
     def _print(self, event: StreamEvent) -> None:
+        if self.json_stdout:
+            # 한 줄에 이벤트 하나. 중계하는 쪽이 줄 단위로 끊어 읽는다.
+            sys.stdout.write(event.model_dump_json() + "\n")
+            sys.stdout.flush()
+            return
+
         color = _C.get(event.kind, "")
         mark = _MARK.get(event.kind, "·")
 

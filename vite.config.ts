@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url'
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+// @ts-expect-error — scripts/ 는 타입 없는 순수 노드 스크립트다
+import { agentApi } from './scripts/agent-api.mjs'
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url))
 
@@ -32,7 +34,7 @@ function liveGraph(): Plugin {
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [liveGraph(), react(), tailwindcss()],
+  plugins: [agentApi(), liveGraph(), react(), tailwindcss()],
   // 저장소 밖이 아닌 agent/state 를 읽어야 하므로 허용 범위에 넣는다.
   server: { fs: { allow: [ROOT] } },
 })
