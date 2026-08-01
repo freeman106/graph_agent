@@ -13,7 +13,7 @@
  * 갈아끼워도 그대로인 것: contract/ 의 타입 전부.
  */
 
-import type { Conversation, Edge, Graph, Node, Weakpoint } from '../contract/schema';
+import type { Comment, Conversation, Edge, Graph, Node } from '../contract/schema';
 import seedGraph from '../contract/fixtures/seed_graph.json';
 import kvCacheConversation from '../contract/fixtures/kv_cache_conversation.json';
 
@@ -210,10 +210,15 @@ export const PLACEMENTS: Placement[] = [
 export const WEAKPOINT_NODE_ID = 'kv-cache';
 
 /**
- * 계약 A 의 Weakpoint 를 그대로 쓴다. 강의노트를 위한 별도 타입이 없는 이유가 이것 —
- * 노드에 붙는 이 구조체가 노트 본문 역할을 한다.
+ * 계약 A 의 Comment 를 그대로 쓴다. 약점은 코멘트 안에 담긴다 —
+ * quote 문장이 노드 document 에서 하이라이트되고 body 가 오른쪽에 표시된다.
  */
-export const DETECTED_WEAKPOINT: Weakpoint = {
+export const DETECTED_COMMENT: Comment = {
+  body:
+    '"학습할 때도 캐시를 쓰면 더 이득 아닌가"에서 막혔다. 캐시가 성립하려면 "이전 스텝"이 존재해야 한다는 전제를 놓쳤다.',
+  quote: null,
+  source_conversation_id: CONVERSATION.id,
+  weakpoint: {
   description:
     '"학습할 때도 캐시를 쓰면 더 이득 아닌가"에서 막혔다. 추론이 느린 이유(스텝이 순차적)와 학습이 느린 이유(역전파·파라미터 갱신)를 같은 문제로 묶어서 본 것이 원인. 캐시가 성립하려면 "이전 스텝"이 존재해야 한다는 전제를 놓쳤다.',
   misconception: '학습이 추론보다 오래 걸리니, 학습에 KV Cache를 적용하면 더 큰 이득을 볼 수 있다.',
@@ -236,7 +241,8 @@ export const DETECTED_WEAKPOINT: Weakpoint = {
       text: '캐시 크기는 배치 × 레이어 × 헤드 × 시퀀스 길이 × head_dim에 비례해서 선형으로 커지고, 긴 컨텍스트에서는 모델 가중치보다 캐시가 더 큰 메모리를 먹기도 합니다.',
     },
   ],
-  source_conversation_id: CONVERSATION.id,
+    source_conversation_id: CONVERSATION.id,
+  },
 };
 
 /** 5단계에서 기존 노드의 요약이 갱신되는 것들. */

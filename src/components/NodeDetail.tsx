@@ -44,7 +44,7 @@ export default function NodeDetail({
           <div className="mt-2 flex items-center gap-2">
             <span className={`h-2.5 w-2.5 ${node.status === 'weak' ? 'rotate-45 bg-[#d85b35]' : node.status === 'learned' ? 'rounded-full bg-[#262624]' : 'rounded-full border border-dashed border-[#77736a]'}`} />
             <span className="text-[10px] font-bold text-[#666259]">{STATUS_LABEL[node.status]}</span>
-            {node.isNew && <span className="border border-[#255c99] px-1.5 py-0.5 text-[8.5px] font-black text-[#255c99]">NEW</span>}
+            {node.isNew && <span className="border border-[#a65f2b] bg-[#fff4e8] px-1.5 py-0.5 text-[8.5px] font-black text-[#8b481f]">보충 개념</span>}
           </div>
           <button
             onClick={() => onOpenNote(node.id)}

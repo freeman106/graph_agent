@@ -5,6 +5,8 @@ import { wrapLabel, type RuntimeEdge, type RuntimeNode } from '../view';
 
 const NODE_RADIUS = 15;
 const FULL_VIEW = { x: 0, y: 0, width: GRAPH_VIEWBOX.width, height: GRAPH_VIEWBOX.height };
+const SUPPLEMENT_COLOR = '#a65f2b';
+const SUPPLEMENT_DARK = '#6f3518';
 
 interface Props {
   nodes: RuntimeNode[];
@@ -47,12 +49,14 @@ export default function Graph({ nodes, edges, selectedId, noteIds, filter, compa
 
   useEffect(() => {
     const selected = selectedId ? byId.get(selectedId) : null;
+    const selectedWidth = compact ? 360 : 520;
+    const selectedHeight = compact ? 205 : 380;
     const target = selected
       ? {
-          x: Math.max(0, Math.min(GRAPH_VIEWBOX.width - 520, selected.x - 520 * 0.34)),
-          y: Math.max(0, Math.min(GRAPH_VIEWBOX.height - 380, selected.y - 380 * 0.48)),
-          width: 520,
-          height: 380,
+          x: Math.max(0, Math.min(GRAPH_VIEWBOX.width - selectedWidth, selected.x - selectedWidth * 0.5)),
+          y: Math.max(0, Math.min(GRAPH_VIEWBOX.height - selectedHeight, selected.y - selectedHeight * 0.48)),
+          width: selectedWidth,
+          height: selectedHeight,
         }
       : FULL_VIEW;
     const start = { ...viewBox };
@@ -77,7 +81,7 @@ export default function Graph({ nodes, edges, selectedId, noteIds, filter, compa
     };
   // viewBox is intentionally captured at the start of each selection transition.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, byId]);
+  }, [selectedId, byId, compact]);
 
   const focusedEdges = useMemo(
     () => new Set(edges.filter((edge) => edge.from_id === focusId || edge.to_id === focusId).map((edge) => edge.id)),
@@ -137,7 +141,7 @@ export default function Graph({ nodes, edges, selectedId, noteIds, filter, compa
           <path d="M0 0 L8 4 L0 8Z" fill="#817c72" />
         </marker>
         <marker id="map-arrow-new" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-          <path d="M0 0 L8 4 L0 8Z" fill="#255c99" />
+          <path d="M0 0 L8 4 L0 8Z" fill={SUPPLEMENT_COLOR} />
         </marker>
       </defs>
 
@@ -173,7 +177,7 @@ export default function Graph({ nodes, edges, selectedId, noteIds, filter, compa
               y1={line.y1}
               x2={line.x2}
               y2={line.y2}
-              stroke={edge.isNew ? '#255c99' : focused ? '#262624' : '#aaa59b'}
+              stroke={edge.isNew ? SUPPLEMENT_COLOR : focused ? '#262624' : '#aaa59b'}
               strokeWidth={edge.isNew || focused ? 1.8 : 1.05}
               strokeDasharray={edgeDash(edge.relation)}
               markerEnd={`url(#${edge.isNew ? 'map-arrow-new' : 'map-arrow'})`}
@@ -197,8 +201,8 @@ export default function Graph({ nodes, edges, selectedId, noteIds, filter, compa
           const width = label.length * 10 + 14;
           return (
             <g key={`label-${edge.id}`} className={edge.justAdded ? 'label-in' : undefined}>
-              <rect x={x - width / 2} y={y - 9} width={width} height="18" fill="#f7f5ef" stroke={edge.isNew ? '#255c99' : '#bdb8ad'} />
-              <text x={x} y={y + 3.5} textAnchor="middle" fontSize="9.5" fontWeight="700" fill={edge.isNew ? '#255c99' : '#5f5b53'}>{label}</text>
+              <rect x={x - width / 2} y={y - 9} width={width} height="18" fill="#f7f5ef" stroke={edge.isNew ? SUPPLEMENT_COLOR : '#bdb8ad'} />
+              <text x={x} y={y + 3.5} textAnchor="middle" fontSize="9.5" fontWeight="700" fill={edge.isNew ? SUPPLEMENT_COLOR : '#5f5b53'}>{label}</text>
             </g>
           );
         })}
@@ -239,15 +243,25 @@ export default function Graph({ nodes, edges, selectedId, noteIds, filter, compa
               }}
             >
               <g className={node.justAdded ? 'node-pop' : undefined}>
-                {node.justAdded && <circle r="18" fill="none" stroke="#255c99" strokeWidth="1.5" className="ring-pulse" />}
+                {node.justAdded && <circle r="18" fill="none" stroke={SUPPLEMENT_COLOR} strokeWidth="1.5" className="ring-pulse" />}
                 {node.flash && <circle r="20" fill="none" stroke="#d85b35" strokeWidth="2" className="flash-ring" />}
                 {selectedId === node.id && <circle r="23" fill="none" stroke="#262624" strokeWidth="1.5" />}
-                {frontier && node.status === 'unlearned' && <circle r="20" fill="none" stroke="#255c99" strokeDasharray="2 4" />}
+                {node.isNew && <circle r="19" fill="none" stroke={SUPPLEMENT_COLOR} strokeWidth="1.5" strokeDasharray="3 2" />}
+                {frontier && !node.isNew && node.status === 'unlearned' && <circle r="20" fill="none" stroke="#255c99" strokeDasharray="2 4" />}
 
                 {node.status === 'weak' ? (
                   <rect x="-11" y="-11" width="22" height="22" transform="rotate(45)" fill="#d85b35" stroke="#9f4025" strokeWidth="2" />
                 ) : node.isNew ? (
-                  <rect x="-10" y="-10" width="20" height="20" fill="#255c99" stroke="#173f6d" strokeWidth="2" />
+                  <rect
+                    x="-10"
+                    y="-10"
+                    width="20"
+                    height="20"
+                    fill={node.status === 'unlearned' ? '#f7f5ef' : SUPPLEMENT_COLOR}
+                    stroke={SUPPLEMENT_DARK}
+                    strokeWidth="2"
+                    strokeDasharray={node.status === 'unlearned' ? '3 2' : undefined}
+                  />
                 ) : (
                   <circle
                     r={node.status === 'learned' ? 10 : 8}
@@ -258,8 +272,9 @@ export default function Graph({ nodes, edges, selectedId, noteIds, filter, compa
                   />
                 )}
 
-                {noteIds.has(node.id) && <circle cx="13" cy="-13" r="4" fill="#f7f5ef" stroke="#d85b35" strokeWidth="2" />}
-                {frontier && <text x="0" y="-27" textAnchor="middle" fontSize="8.5" fontWeight="900" fill="#255c99">NEXT</text>}
+                {node.isNew && <text x="0" y="-27" textAnchor="middle" fontSize="7.5" fontWeight="900" fill={SUPPLEMENT_COLOR}>{node.status === 'unlearned' ? 'ADDENDUM · 미학습' : 'ADDENDUM'}</text>}
+                {noteIds.has(node.id) && <g><title>연결된 노트 코멘트 또는 약점 기록 있음</title><circle cx="13" cy="-13" r="4" fill="#f7f5ef" stroke="#d85b35" strokeWidth="2" /></g>}
+                {frontier && !node.isNew && <text x="0" y="-27" textAnchor="middle" fontSize="8.5" fontWeight="900" fill="#255c99">NEXT</text>}
               </g>
 
               <g pointerEvents="none">
