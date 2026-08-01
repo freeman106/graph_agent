@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import Graph from './components/Graph';
+import Graph, { type DetailLevel, type GraphMode } from './components/Graph';
 import Legend from './components/Legend';
 import NodeDetail from './components/NodeDetail';
 import SideRail from './components/SideRail';
@@ -23,7 +23,8 @@ import {
 
 type Phase = 'idle' | 'running' | 'done';
 
-const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** 데모는 사고 과정이 보이되, 결과까지 15초 안에 도달하도록 압축한다. */
+const wait = (ms: number) => new Promise((r) => setTimeout(r, Math.round(ms * 0.34)));
 
 /** 스트림 줄에 개념 이름을 찍기 위한 정적 라벨 맵 */
 const LABELS = new Map<string, string>([
@@ -39,8 +40,12 @@ export default function App() {
   const [notes, setNotes] = useState<Record<string, LectureNote>>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>('idle');
+  const [verified, setVerified] = useState(false);
   const [activeStep, setActiveStep] = useState(-1);
   const [pasted, setPasted] = useState('');
+  const [graphMode, setGraphMode] = useState<GraphMode>('atlas');
+  const [detailLevel, setDetailLevel] = useState<DetailLevel>('links');
+  const [goalId, setGoalId] = useState('grouped-query-attention');
 
   const lineId = useRef(0);
   const runToken = useRef(0);
@@ -50,6 +55,21 @@ export default function App() {
   }, []);
 
   const noteIds = useMemo(() => new Set(Object.keys(notes)), [notes]);
+  const frontierIds = useMemo(() => {
+    const active = new Set(nodes.filter((node) => node.status !== 'unlearned').map((node) => node.id));
+    return new Set(
+      nodes
+        .filter((node) => node.status === 'unlearned')
+        .filter((node) =>
+          edges.some(
+            (edge) =>
+              (edge.source === node.id && active.has(edge.target)) ||
+              (edge.target === node.id && active.has(edge.source)),
+          ),
+        )
+        .map((node) => node.id),
+    );
+  }, [nodes, edges]);
   const selectedNode = selectedId ? (nodes.find((n) => n.id === selectedId) ?? null) : null;
 
   const reset = () => {
@@ -60,8 +80,24 @@ export default function App() {
     setNotes({});
     setSelectedId(null);
     setPhase('idle');
+    setVerified(false);
     setActiveStep(-1);
     setPasted('');
+    setGraphMode('atlas');
+    setDetailLevel('links');
+  };
+
+  const verifyUnderstanding = () => {
+    setVerified(true);
+    setSelectedId(null);
+    setNodes((prev) =>
+      prev.map((node) =>
+        node.id === WEAKPOINT_NODE_ID ? { ...node, status: 'learned', flash: true } : node,
+      ),
+    );
+    window.setTimeout(() => {
+      setNodes((prev) => prev.map((node) => (node.flash ? { ...node, flash: false } : node)));
+    }, 1500);
   };
 
   /* ──────────────────── 실행: 전부 타이머로 흐름만 흉내 낸다 ──────────────────── */
@@ -72,6 +108,7 @@ export default function App() {
 
     setPasted(text);
     setPhase('running');
+    setVerified(false);
     setSelectedId(null);
 
     push(
@@ -259,18 +296,22 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-slate-100 text-slate-900">
-      <header className="flex shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-5 py-2.5">
-        <div className="grid h-6 w-6 place-items-center rounded-md bg-slate-900 text-[13px] font-black text-white">
-          ▚
+    <div className="flex h-screen min-w-[1180px] flex-col overflow-hidden bg-slate-100 text-slate-900">
+      <header className="flex shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-5 py-3">
+        <div className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-slate-950 to-slate-700 text-[14px] font-black text-white shadow-sm">
+          G
         </div>
-        <h1 className="text-[15px] font-bold tracking-tight">지식그래프 학습 도우미</h1>
-        <span className="text-[12px] text-slate-400">
-          공부한 대화를 붙여넣으면 개념이 추출되어 기존 그래프에 자동으로 연결됩니다
-        </span>
-        <span className="ml-auto rounded-full bg-slate-100 px-2.5 py-1 font-mono-term text-[10.5px] text-slate-500">
-          prototype · mock data
-        </span>
+        <div>
+          <div className="flex items-baseline gap-2">
+            <h1 className="text-[15px] font-extrabold tracking-tight">Graphmind</h1>
+            <span className="text-[10px] font-bold tracking-wider text-slate-400">PERSONAL COGNITIVE MAP</span>
+          </div>
+          <p className="mt-0.5 text-[10.5px] text-slate-400">무엇을 이해했고, 어디서 착각했는지를 기억합니다.</p>
+        </div>
+        <div className="ml-auto flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+          <span className="text-[10px] font-semibold text-slate-500">나의 지식지도 · Transformer</span>
+        </div>
       </header>
 
       <div className="flex min-h-0 flex-1">
@@ -278,28 +319,92 @@ export default function App() {
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="relative min-h-0 flex-1 bg-white">
             <div className="pointer-events-none absolute top-3 left-4 z-10">
-              <div className="text-[11px] font-bold tracking-wider text-slate-400">지식그래프</div>
+              <div className="text-[11px] font-bold tracking-wider text-slate-500">
+                {graphMode === 'atlas' ? '지식 지도' : graphMode === 'orbit' ? '목표 궤도' : '학습 흐름'}
+              </div>
               <div className="font-mono-term text-[11px] text-slate-400">
                 {nodes.length} nodes · {edges.length} edges
               </div>
             </div>
+            <div className="absolute top-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-xl border border-slate-200 bg-white/92 p-1 shadow-sm backdrop-blur">
+              {([
+                ['atlas', '◫', '지도'],
+                ['orbit', '◎', '목표 궤도'],
+                ['story', '⌁', '학습 흐름'],
+              ] as const).map(([mode, icon, label]) => (
+                <button
+                  key={mode}
+                  onClick={() => setGraphMode(mode)}
+                  className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[10.5px] font-bold transition ${
+                    graphMode === mode
+                      ? 'bg-slate-900 text-white shadow-sm'
+                      : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'
+                  }`}
+                >
+                  <span className="text-[13px]">{icon}</span>
+                  {label}
+                </button>
+              ))}
+            </div>
+            {graphMode !== 'story' && (
+              <div className="absolute top-3 right-4 z-20 flex items-center gap-2">
+                <div className="flex items-center rounded-lg border border-slate-200 bg-white/92 p-0.5 shadow-sm backdrop-blur">
+                  {([
+                    ['regions', '영역'],
+                    ['links', '연결'],
+                    ['concepts', '개념'],
+                  ] as const).map(([level, label]) => (
+                    <button
+                      key={level}
+                      onClick={() => setDetailLevel(level)}
+                      className={`rounded-md px-2 py-1 text-[9.5px] font-bold transition ${
+                        detailLevel === level ? 'bg-sky-100 text-sky-700' : 'text-slate-400 hover:text-slate-700'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {graphMode === 'orbit' && (
+              <label className="absolute top-[54px] right-4 z-20 flex items-center gap-2 rounded-lg border border-violet-200 bg-violet-50/95 px-2.5 py-1.5 shadow-sm backdrop-blur">
+                <span className="text-[9.5px] font-extrabold tracking-wider text-violet-500">GOAL</span>
+                <select
+                  value={goalId}
+                  onChange={(event) => {
+                    setGoalId(event.target.value);
+                    setSelectedId(null);
+                  }}
+                  className="max-w-[170px] bg-transparent text-[10.5px] font-bold text-violet-900 outline-none"
+                >
+                  <option value="grouped-query-attention">Grouped-Query Attention</option>
+                  <option value="transformer-block">Transformer Block</option>
+                  <option value="beam-search">Beam Search</option>
+                </select>
+              </label>
+            )}
             <Graph
               nodes={nodes}
               edges={edges}
               selectedId={selectedId}
               noteIds={noteIds}
+              frontierIds={frontierIds}
+              mode={graphMode}
+              detailLevel={detailLevel}
+              goalId={goalId}
               onSelect={setSelectedId}
             />
-            <Legend />
+            {graphMode !== 'story' && <Legend />}
           </div>
 
           <div className="shrink-0 border-t border-slate-200 bg-white px-4 pt-3 pb-3">
             <div className="mb-1.5 flex items-baseline gap-2">
-              <span className="text-[11px] font-bold tracking-wider text-slate-400">
-                대화 붙여넣기
+              <span className="text-[11px] font-extrabold tracking-wider text-slate-500">
+                학습 대화 가져오기
               </span>
               <span className="text-[11px] text-slate-400">
-                붙여넣는 즉시 자동 실행됩니다 · 단계별 승인 없음
+                ChatGPT · Claude 대화를 붙여넣으면 자동으로 생각의 흔적을 분석합니다
               </span>
               <span className="ml-auto text-[11px]">
                 {phase === 'idle' ? (
@@ -307,7 +412,7 @@ export default function App() {
                     onClick={() => void run(SAMPLE_CONVERSATION)}
                     className="text-slate-400 underline decoration-dotted underline-offset-2 hover:text-slate-600"
                   >
-                    샘플 대화 붙여넣기 (데모용)
+                    샘플로 경험하기 →
                   </button>
                 ) : (
                   <button
@@ -324,7 +429,7 @@ export default function App() {
               onPaste={handlePaste}
               onChange={(e) => setPasted(e.target.value)}
               readOnly={phase !== 'idle'}
-              placeholder="여기에 ChatGPT / Claude 대화를 통째로 붙여넣으세요  (⌘V)"
+              placeholder="여기에 학습 대화를 통째로 붙여넣으세요…  (Ctrl/⌘ + V)"
               className={`light-scroll h-[104px] w-full resize-none rounded-lg border px-3 py-2.5 text-[12.5px] leading-relaxed outline-none transition ${
                 phase === 'idle'
                   ? 'border-slate-200 bg-slate-50 text-slate-700 placeholder:text-slate-400 focus:border-slate-400 focus:bg-white'
@@ -349,8 +454,15 @@ export default function App() {
         )}
 
         {/* 우측: 에이전트 실행 스트림 */}
-        <div className="w-[404px] shrink-0">
-          <StreamPanel lines={lines} activeStep={activeStep} phase={phase} />
+        <div className="w-[390px] shrink-0">
+          <StreamPanel
+            lines={lines}
+            activeStep={activeStep}
+            phase={phase}
+            verified={verified}
+            onVerify={verifyUnderstanding}
+            onSelect={setSelectedId}
+          />
         </div>
       </div>
     </div>

@@ -104,6 +104,35 @@ body {
   animation: flash-ring 900ms ease-out 2;
 }
 
+@keyframes goal-orbit-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.goal-orbit {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: goal-orbit-spin 14s linear infinite;
+}
+
+.atlas-regions rect,
+.atlas-regions path {
+  transition: fill 240ms ease, stroke 240ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .goal-orbit,
+  .ring-pulse,
+  .flash-ring,
+  .node-pop,
+  .edge-draw,
+  .label-in,
+  .line-in,
+  .caret {
+    animation: none !important;
+  }
+}
+
 /* ── 스트림 ─────────────────────────────────────────── */
 
 @keyframes line-in {

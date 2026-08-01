@@ -13,7 +13,8 @@ import sampleConversationRaw from '../sample-conversation.md?raw';
 /* ────────────────────────────── 그래프 타입 ────────────────────────────── */
 
 export type NodeStatus =
-  | 'learned' // 학습 완료
+  | 'learned' // 문제나 설명으로 검증 완료
+  | 'introduced' // 대화에서 발견했지만 아직 검증 전
   | 'unlearned' // 미학습 — 아직 안 밟은 노드
   | 'weak'; // 약점 있음 — 공부했지만 대화에서 헤맨 흔적
 
@@ -385,7 +386,7 @@ export const PLACEMENTS: Placement[] = [
       label: 'KV Cache',
       x: 545,
       y: 480,
-      status: 'learned',
+      status: 'introduced',
       summary:
         '자기회귀 생성에서 이전 토큰들의 Key/Value 텐서를 저장해두고 재사용해, 매 스텝의 재계산을 없애는 추론 전용 최적화.',
     },
@@ -408,7 +409,7 @@ export const PLACEMENTS: Placement[] = [
       label: 'Autoregressive Decoding',
       x: 350,
       y: 505,
-      status: 'learned',
+      status: 'introduced',
       summary: '이전까지 생성한 토큰을 다시 입력으로 넣어 다음 토큰을 하나씩 뽑는 순차 생성 방식.',
     },
     edges: [
@@ -439,7 +440,7 @@ export const PLACEMENTS: Placement[] = [
       label: 'Incremental Decoding',
       x: 475,
       y: 630,
-      status: 'learned',
+      status: 'introduced',
       summary: '스텝마다 새 토큰 하나 분량만 추가로 계산하는 생성 방식.',
     },
     edges: [
@@ -458,7 +459,7 @@ export const PLACEMENTS: Placement[] = [
       label: 'Flash Attention',
       x: 700,
       y: 600,
-      status: 'learned',
+      status: 'introduced',
       summary:
         '어텐션 행렬을 메모리에 쓰지 않고 타일 단위로 처리해 HBM 왕복을 줄이는 IO 최적화. 결과값은 기존 어텐션과 동일하다.',
     },
@@ -664,10 +665,16 @@ export interface StatusStyle {
 
 export const STATUS_STYLE: Record<NodeStatus, StatusStyle> = {
   learned: {
-    label: '학습 완료',
+    label: '이해 검증 완료',
     fill: '#10b981',
     stroke: '#047857',
     text: '#0f172a',
+  },
+  introduced: {
+    label: '대화에서 발견 · 검증 전',
+    fill: '#ddd6fe',
+    stroke: '#7c3aed',
+    text: '#3b0764',
   },
   unlearned: {
     label: '미학습 · 다음에 공부할 것',
