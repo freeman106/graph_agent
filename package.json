@@ -10,6 +10,7 @@
     "dev": "vite",
     "dev:live": "node scripts/dev-live.mjs",
     "build": "node scripts/build.mjs",
+    "start": "node scripts/serve.mjs",
     "preview": "vite preview",
     "agent": "node scripts/agent.mjs",
     "agent:offline": "node scripts/agent.mjs --offline",
