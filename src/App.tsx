@@ -28,6 +28,31 @@ import type { RuntimeEdge, RuntimeNode, RuntimeNoteComment, RuntimePipelineStep,
 
 type Phase = 'idle' | 'running' | 'done';
 type LearningInputMode = 'conversation' | 'share' | 'reflection';
+type Subject = { id: string; name: string };
+
+const DEFAULT_SUBJECT: Subject = { id: 'deep-learning', name: '딥러닝 시스템 설계' };
+const SUBJECTS_STORAGE_KEY = 'graphmind.subjects.v1';
+
+function initialSubjects(): Subject[] {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(SUBJECTS_STORAGE_KEY) ?? '[]') as Subject[];
+    const valid = parsed.filter((subject) => subject?.id && subject?.name);
+    return valid.some((subject) => subject.id === DEFAULT_SUBJECT.id)
+      ? valid
+      : [DEFAULT_SUBJECT, ...valid];
+  } catch {
+    return [DEFAULT_SUBJECT];
+  }
+}
+
+const GRAPH_MUTATION_TOOLS = new Set([
+  'create_chapter',
+  'create_subtopic',
+  'create_node',
+  'link_nodes',
+  'merge_nodes',
+  'mark_progress',
+]);
 
 const INPUT_MODES: Array<{
   id: LearningInputMode;
@@ -133,6 +158,62 @@ function initialNoteContent(): Record<string, string> {
   return Object.fromEntries([...original, ...insertions]);
 }
 
+function pipelineLabel(tool: string): string {
+  if (['parse_conversation'].includes(tool)) return '입력 분석';
+  if (['search_nodes', 'get_neighbors', 'match_nodes', 'lookup_reference'].includes(tool)) return '개념·근거 조사';
+  if (['create_chapter', 'create_subtopic'].includes(tool)) return '단원 구조 생성';
+  if (['create_node', 'link_nodes', 'merge_nodes', 'place_nodes'].includes(tool)) return '지식지도 구성';
+  if (['quote_conversation', 'detect_weakpoints'].includes(tool)) return '약점 근거 확인';
+  if (['mark_progress', 'write_lecture_note'].includes(tool)) return '학습 상태 반영';
+  if (['review_graph'].includes(tool)) return '결과 검수';
+  return '도구 실행';
+}
+
+function addPipelineTool(
+  steps: RuntimePipelineStep[],
+  id: number,
+  tool: string,
+): RuntimePipelineStep[] {
+  const label = pipelineLabel(tool);
+  const last = steps.at(-1);
+  if (last?.status === 'running' && last.label === label) {
+    return steps.map((step, index) =>
+      index === steps.length - 1
+        ? { ...step, tools: [...step.tools, { id, name: tool, status: 'running' }] }
+        : step,
+    );
+  }
+  return [
+    ...steps,
+    { id, label, status: 'running', tools: [{ id, name: tool, status: 'running' }] },
+  ];
+}
+
+function completePipelineTool(
+  steps: RuntimePipelineStep[],
+  tool: string,
+): RuntimePipelineStep[] {
+  let stepIndex = -1;
+  let toolIndex = -1;
+  for (let i = 0; i < steps.length && stepIndex < 0; i += 1) {
+    const match = steps[i].tools.findIndex(
+      (item) => item.status === 'running' && item.name === tool,
+    );
+    if (match >= 0) {
+      stepIndex = i;
+      toolIndex = match;
+    }
+  }
+  if (stepIndex < 0) return steps;
+  return steps.map((step, index) => {
+    if (index !== stepIndex) return step;
+    const tools = step.tools.map((item, itemIndex) =>
+      itemIndex === toolIndex ? { ...item, status: 'done' as const } : item,
+    );
+    return { ...step, tools, status: tools.every((item) => item.status === 'done') ? 'done' : 'running' };
+  });
+}
+
 export default function App() {
   const [nodes, setNodes] = useState<RuntimeNode[]>([]);
   const [edges, setEdges] = useState<RuntimeEdge[]>([]);
@@ -140,8 +221,7 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>('idle');
   const [activeStep, setActiveStep] = useState(-1);
-  // null은 목 6단계, 배열은 실제 스트림의 툴 호출과 1:1로 대응한다.
-  const [pipelineSteps, setPipelineSteps] = useState<RuntimePipelineStep[] | null>(null);
+  const [pipelineSteps, setPipelineSteps] = useState<RuntimePipelineStep[]>([]);
   const [pasted, setPasted] = useState('');
   const [inputMode, setInputMode] = useState<LearningInputMode>('conversation');
   const [inputError, setInputError] = useState<string | null>(null);
@@ -164,6 +244,11 @@ export default function App() {
   const [isMinimapDragging, setIsMinimapDragging] = useState(false);
   // 키가 있는 개발 서버에서만 실제 실행이 붙는다. 없으면 목으로 흐른다.
   const [agent, setAgent] = useState<AgentStatus>({ available: false });
+  const [subjects, setSubjects] = useState<Subject[]>(initialSubjects);
+  const [activeSubjectId, setActiveSubjectId] = useState(DEFAULT_SUBJECT.id);
+  const [subjectAdding, setSubjectAdding] = useState(false);
+  const [newSubjectName, setNewSubjectName] = useState('');
+  const [subjectError, setSubjectError] = useState<string | null>(null);
 
   const lineId = useRef(0);
   const runToken = useRef(0);
@@ -171,10 +256,15 @@ export default function App() {
   const pdfInputRef = useRef<HTMLInputElement>(null);
   const workspaceRef = useRef<HTMLElement | null>(null);
   const minimapDragRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null);
+  const subjectViewsRef = useRef(new Map<string, { nodes: RuntimeNode[]; edges: RuntimeEdge[]; chapters: Chapter[] }>());
 
   useEffect(() => {
     void probeAgent().then(setAgent);
   }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(SUBJECTS_STORAGE_KEY, JSON.stringify(subjects));
+  }, [subjects]);
 
   useEffect(() => {
     const syncFullscreen = () => setIsFullscreen(document.fullscreenElement === workspaceRef.current);
@@ -220,28 +310,20 @@ export default function App() {
 
   const syncLivePipeline = (event: StreamEvent) => {
     if (event.kind === 'tool_call') {
-      setPipelineSteps((previous) => [
-        ...(previous ?? []),
-        { id: event.seq, tool: event.tool ?? 'unknown', status: 'running' },
-      ]);
+      setPipelineSteps((previous) => addPipelineTool(previous, event.seq, event.tool ?? 'unknown'));
       return;
     }
     if (event.kind !== 'tool_result') return;
-    setPipelineSteps((previous) => {
-      if (!previous) return [];
-      const match = previous.findIndex(
-        (step) => step.status === 'running' && step.tool === (event.tool ?? 'unknown'),
-      );
-      if (match < 0) return previous;
-      return previous.map((step, index) =>
-        index === match ? { ...step, status: 'done' } : step,
-      );
-    });
+    setPipelineSteps((previous) => completePipelineTool(previous, event.tool ?? 'unknown'));
   };
 
   const finishLivePipeline = () => {
     setPipelineSteps((previous) =>
-      previous?.map((step) => ({ ...step, status: 'done' })) ?? [],
+      previous.map((step) => ({
+        ...step,
+        status: 'done',
+        tools: step.tools.map((tool) => ({ ...tool, status: 'done' })),
+      })),
     );
   };
 
@@ -260,6 +342,69 @@ export default function App() {
   const newCount = nodes.filter((node) => node.isNew).length;
   const selectedInputMode = INPUT_MODES.find((mode) => mode.id === inputMode) ?? INPUT_MODES[0];
 
+  const clearWorkspaceForSubject = () => {
+    setNodes([]);
+    setEdges([]);
+    setChapters([]);
+    setLines([]);
+    setSelectedId(null);
+    setPhase('idle');
+    setActiveStep(-1);
+    setPipelineSteps([]);
+    setPasted('');
+    setInputError(null);
+    setMapFilter('all');
+    setNoteMode(false);
+    setDocNote(false);
+    setStudyMode(false);
+    setPdfNote(null);
+    setPdfError(null);
+    setNoteComments([]);
+    setNoteContent(initialNoteContent());
+    setResolvedWeakpoints(new Set());
+    setMinimapPosition({ x: 12, y: 12 });
+  };
+
+  const switchSubject = async (subjectId: string) => {
+    if (phase === 'running' || subjectId === activeSubjectId) return;
+    subjectViewsRef.current.set(activeSubjectId, { nodes, edges, chapters });
+    const token = ++runToken.current;
+    setActiveSubjectId(subjectId);
+    setSubjectAdding(false);
+    setSubjectError(null);
+    clearWorkspaceForSubject();
+
+    const cached = subjectViewsRef.current.get(subjectId);
+    if (cached) {
+      setNodes(cached.nodes);
+      setEdges(cached.edges);
+      setChapters(cached.chapters);
+      return;
+    }
+
+    const graph = await fetchGraph(subjectId);
+    if (runToken.current !== token || !graph) return;
+    setNodes(withLayout(graph.nodes, graph.edges, graph.chapters));
+    setEdges(graph.edges.map((edge) => ({ ...edge })));
+    setChapters(graph.chapters);
+  };
+
+  const addSubject = () => {
+    const name = newSubjectName.trim();
+    if (name.length < 2) {
+      setSubjectError('과목 이름을 2자 이상 입력해 주세요.');
+      return;
+    }
+    if (subjects.some((subject) => subject.name.toLocaleLowerCase() === name.toLocaleLowerCase())) {
+      setSubjectError('이미 같은 이름의 과목이 있습니다.');
+      return;
+    }
+    const subject = { id: `subject-${Date.now().toString(36)}`, name };
+    setSubjects((previous) => [...previous, subject]);
+    setNewSubjectName('');
+    void switchSubject(subject.id);
+  };
+
   const reset = () => {
     runToken.current++;
     setNodes([]);
@@ -269,7 +414,7 @@ export default function App() {
     setSelectedId(null);
     setPhase('idle');
     setActiveStep(-1);
-    setPipelineSteps(null);
+    setPipelineSteps([]);
     setPasted('');
     setInputMode('conversation');
     setInputError(null);
@@ -382,6 +527,9 @@ export default function App() {
 
   const selectFromGraph = (nodeId: string | null) => {
     setSelectedId(nodeId);
+    if (!nodeId || !docNote) return;
+    const anchorId = noteBundle?.anchorOf[nodeId];
+    if (anchorId) navigateInNote(nodeId, anchorId);
   };
 
   /**
@@ -415,7 +563,7 @@ export default function App() {
         if (!alive()) return;
         finishLivePipeline();
         setPhase('done');
-        void fetchGraph().then((graph) => {
+        void fetchGraph(activeSubjectId).then((graph) => {
           if (!alive() || !graph) return;
           // 강의안에서 처음 만든 그래프는 전부 기본 노드다.
           // isNew는 이후 학습 대화에서 추가된 보충 개념에만 사용한다.
@@ -431,18 +579,21 @@ export default function App() {
         push('system', `실행 실패 — ${message}`);
         setPhase('done');
       },
-    });
+    }, activeSubjectId);
   };
 
   /**
    * 실제 에이전트 실행. 개발 서버에 키가 있을 때만 이 경로로 온다.
    *
-   * 파이프라인 칸은 decision 이 올 때마다 하나씩 올린다 — 모델이 턴을 나누는
-   * 지점이 곧 단계 경계다. 단계를 미리 정해두지 않는다.
+   * 파이프라인은 도구의 목적과 실제 호출 순서로 묶는다. 각 묶음의 결과가
+   * 모두 도착하면 그 단계가 완료되므로 미리 정한 단계 수에 의존하지 않는다.
    */
-  const runLive = async (text: string) => {
+  const runLive = async (text: string, mode: LearningInputMode = inputMode) => {
     const token = ++runToken.current;
     const alive = () => runToken.current === token;
+    let graphMutationObserved = false;
+    const mutatedNodeIds = new Set<string>();
+    const agentText = mode === 'reflection' ? `현재 학습 상황 입력:\n${text}` : text;
 
     setPasted(text);
     setPhase('running');
@@ -452,9 +603,22 @@ export default function App() {
     push('system', `대화 입력 감지 — ${text.length.toLocaleString()}자`);
     push('system', `실제 실행 — OpenAI API (키 …${agent.keyTail ?? ''})`);
 
-    await runAgent(text, {
+    // 초기화는 화면만 비우고 저장소는 보존한다. 실행 전 상태를 기억해 두지 않으면
+    // 모델이 아무것도 바꾸지 않은 경우에도 과거 저장 그래프가 화면에 다시 나타난다.
+    const graphBefore = await fetchGraph(activeSubjectId);
+    if (!alive()) return;
+    const graphBeforeSnapshot = graphBefore ? JSON.stringify(graphBefore) : null;
+
+    await runAgent(agentText, {
       onEvent: (event) => {
         if (!alive()) return;
+        if (event.kind === 'tool_call' && event.tool && GRAPH_MUTATION_TOOLS.has(event.tool)) {
+          graphMutationObserved = true;
+          for (const key of ['node_id', 'keep_id', 'merge_id']) {
+            const value = event.args?.[key];
+            if (typeof value === 'string') mutatedNodeIds.add(value);
+          }
+        }
         syncLivePipeline(event);
         const line = toStreamLine(event);
         if (line) push(line.kind, line.text);
@@ -463,8 +627,16 @@ export default function App() {
         if (!alive()) return;
         finishLivePipeline();
         setPhase('done');
-        void fetchGraph().then((graph) => {
+        if (!graphMutationObserved) {
+          push('system', '분석 완료 — 그래프에 반영할 학습 정보가 없습니다.');
+          return;
+        }
+        void fetchGraph(activeSubjectId).then((graph) => {
           if (!alive() || !graph) return;
+          if (JSON.stringify(graph) === graphBeforeSnapshot) {
+            push('system', '분석 완료 — 그래프에 반영할 학습 정보가 없습니다.');
+            return;
+          }
           // 좌표는 계약에 없다. 새 노드는 프론트가 기존 배치를 보고 자리를 잡는다.
           setNodes((previous) => {
             const points = pointsOf(previous);
@@ -479,7 +651,15 @@ export default function App() {
               const point = seen ?? NODE_LAYOUT[node.id] ?? placeNewNode(node.id, anchors, points);
               // 같은 응답에서 뒤이어 배치되는 새 노드도 이 자리를 피하게 한다.
               points[node.id] = { x: point.x, y: point.y };
-              return { ...node, x: point.x, y: point.y, isNew: !known.has(node.id) };
+              return {
+                ...node,
+                // 체크박스로 바꾼 로컬 학습 상태는 이 실행에서 모델이 직접 건드린
+                // 노드가 아니면 보존한다. 전체 저장소 응답으로 덮어쓰지 않는다.
+                status: seen && !mutatedNodeIds.has(node.id) ? seen.status : node.status,
+                x: point.x,
+                y: point.y,
+                isNew: !known.has(node.id),
+              };
             });
           });
           setEdges(graph.edges.map((edge) => ({ ...edge })));
@@ -493,7 +673,7 @@ export default function App() {
         push('system', `실행 실패 — ${message}`);
         setPhase('done');
       },
-    });
+    }, activeSubjectId);
   };
 
   const run = async (text: string) => {
@@ -512,13 +692,18 @@ export default function App() {
         return;
       }
       push('system', `대화 ${fetched.turnCount}턴 · ${fetched.text.length.toLocaleString()}자 확보`);
-      return runLive(fetched.text);
+      return runLive(fetched.text, 'conversation');
     }
-    if (agent.available) return runLive(text);
+    if (agent.available) return runLive(text, inputMode);
+    if (inputMode === 'reflection') {
+      setPhase('done');
+      push('system', agent.reason ?? '현재 학습 상황을 반영하려면 OpenAI API 연결이 필요합니다.');
+      return;
+    }
     const token = ++runToken.current;
     const alive = () => runToken.current === token;
 
-    setPipelineSteps(null);
+    setPipelineSteps([]);
     setPasted(text);
     setPhase('running');
     setSelectedId(null);
@@ -528,10 +713,12 @@ export default function App() {
 
     setActiveStep(0);
     const s1 = TOOL_STEPS.parse_conversation;
+    setPipelineSteps((previous) => addPipelineTool(previous, 1, s1.tool));
     push('call', `[호출 중] ${s1.tool}(${s1.args})`);
     await wait(1300);
     if (!alive()) return;
     push('result', `[결과] ${s1.result}`);
+    setPipelineSteps((previous) => completePipelineTool(previous, s1.tool));
     push('reason', s1.reason);
     push('detail', 'Self-Attention · Masked Attention · Query/Key/Value · Multi-Head Attention · Grouped-Query Attention');
     push('detail', 'KV Cache · Autoregressive Decoding · Incremental Decoding · Flash Attention');
@@ -540,10 +727,12 @@ export default function App() {
 
     setActiveStep(1);
     const s2 = TOOL_STEPS.match_nodes;
+    setPipelineSteps((previous) => addPipelineTool(previous, 2, s2.tool));
     push('call', `[호출 중] ${s2.tool}(${s2.args})`);
     await wait(1350);
     if (!alive()) return;
     push('result', `[결과] ${s2.result}`);
+    setPipelineSteps((previous) => completePipelineTool(previous, s2.tool));
     push('reason', s2.reason);
     push('detail', '일치 → Self-Attention, Masked Attention, Query/Key/Value, Multi-Head Attention, Grouped-Query Attention');
     push('detail', '신규 → KV Cache, Autoregressive Decoding, Incremental Decoding, Flash Attention');
@@ -552,6 +741,7 @@ export default function App() {
 
     setActiveStep(2);
     const s3 = TOOL_STEPS.place_nodes;
+    setPipelineSteps((previous) => addPipelineTool(previous, 3, s3.tool));
     push('call', `[호출 중] ${s3.tool}(${s3.args})`);
     await wait(900);
     if (!alive()) return;
@@ -579,16 +769,19 @@ export default function App() {
     setNodes((previous) => previous.map((node) => (node.justAdded ? { ...node, justAdded: false } : node)));
     setEdges((previous) => previous.map((edge) => (edge.justAdded ? { ...edge, justAdded: false } : edge)));
     push('result', `[결과] ${s3.result}`);
+    setPipelineSteps((previous) => completePipelineTool(previous, s3.tool));
     push('reason', s3.reason);
     await wait(1400);
     if (!alive()) return;
 
     setActiveStep(3);
     const s4 = TOOL_STEPS.detect_weakpoints;
+    setPipelineSteps((previous) => addPipelineTool(previous, 4, s4.tool));
     push('call', `[호출 중] ${s4.tool}(${s4.args})`);
     await wait(1350);
     if (!alive()) return;
     push('result', `[결과] ${s4.result}`);
+    setPipelineSteps((previous) => completePipelineTool(previous, s4.tool));
     push('reason', s4.reason);
     push('detail', '  ▣ 기존 강의노트 관련 문장 2곳 일치 → 하이라이트와 코멘트 앵커 생성');
     push('detail', '  + 노트 밖 신규 개념 3개 → 시험범위 밖 보충 아코디언으로 분리');
@@ -600,6 +793,7 @@ export default function App() {
 
     setActiveStep(4);
     const s5 = TOOL_STEPS.write_lecture_note;
+    setPipelineSteps((previous) => addPipelineTool(previous, 5, s5.tool));
     push('call', `[호출 중] ${s5.tool}(${s5.args})`);
     await wait(900);
     if (!alive()) return;
@@ -622,12 +816,14 @@ export default function App() {
     }
     push('detail', '  ✎ 오른쪽 코멘트 5건 연결 · 신규 보충 노드 3개와 노트 이동 경로 생성');
     push('result', `[결과] ${s5.result}`);
+    setPipelineSteps((previous) => completePipelineTool(previous, s5.tool));
     push('reason', s5.reason);
     await wait(1300);
     if (!alive()) return;
 
     setActiveStep(5);
     const s6 = TOOL_STEPS.review_graph;
+    setPipelineSteps((previous) => addPipelineTool(previous, 6, s6.tool));
     push('call', `[호출 중] ${s6.tool}(${s6.args})`);
     await wait(1400);
     if (!alive()) return;
@@ -659,6 +855,7 @@ export default function App() {
       if (!alive()) return;
     }
     push('result', `[결과] ${s6.result}`);
+    setPipelineSteps((previous) => completePipelineTool(previous, s6.tool));
     push('reason', s6.reason);
     await wait(700);
     if (!alive()) return;
@@ -685,8 +882,11 @@ export default function App() {
       setInputError('분석할 학습 대화를 20자 이상 입력해 주세요.');
       return;
     }
-    if (inputMode === 'reflection' && text.length < 10) {
-      setInputError('현재 이해한 내용이나 막힌 지점을 10자 이상 적어 주세요.');
+    const reflectionIsQuestion = /[?？]\s*$/.test(text);
+    if (inputMode === 'reflection' && text.length < (reflectionIsQuestion ? 2 : 5)) {
+      setInputError(reflectionIsQuestion
+        ? '질문할 개념을 한 글자 이상 적어 주세요.'
+        : '현재 이해한 내용이나 막힌 지점을 5자 이상 적어 주세요.');
       return;
     }
     setInputError(null);
@@ -740,12 +940,45 @@ export default function App() {
           <h1 className="text-[15px] font-black tracking-[-0.02em]">GRAPHMIND</h1>
           <span className="text-[10px] font-semibold tracking-[0.18em] text-[#77736a]">개인 지식 지도</span>
         </div>
-        <div className="ml-6 flex h-9 items-center border border-[#bdb8ad] bg-[#f8f6f0]">
+        <div className="relative ml-6 flex h-9 items-center border border-[#bdb8ad] bg-[#f8f6f0]">
           <label htmlFor="subject-select" className="border-r border-[#d2cec4] px-2.5 font-mono-term text-[8px] font-black tracking-[0.12em] text-[#8c877d]">과목</label>
-          <select id="subject-select" value="deep-learning" onChange={() => {}} className="h-full border-0 bg-transparent px-3 text-[10px] font-black text-[#3c3a36] outline-none">
-            <option value="deep-learning">딥러닝 시스템 설계</option>
+          <select
+            id="subject-select"
+            value={activeSubjectId}
+            disabled={phase === 'running'}
+            onChange={(event) => void switchSubject(event.target.value)}
+            className="h-full max-w-[180px] border-0 bg-transparent px-3 text-[10px] font-black text-[#3c3a36] outline-none disabled:opacity-50"
+          >
+            {subjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.name}</option>)}
           </select>
-          <button type="button" className="h-full border-l border-[#d2cec4] px-3 text-[9px] font-black text-[#77736a] hover:bg-[#eee9df]">＋ 과목 추가</button>
+          <button
+            type="button"
+            disabled={phase === 'running'}
+            onClick={() => { setSubjectAdding((value) => !value); setSubjectError(null); }}
+            className="h-full border-l border-[#d2cec4] px-3 text-[9px] font-black text-[#77736a] hover:bg-[#eee9df] disabled:opacity-40"
+          >＋ 과목 추가</button>
+          {subjectAdding && (
+            <div className="absolute top-11 left-0 z-[100] w-[310px] border border-[#262624] bg-[#f8f6f0] p-3 shadow-[6px_6px_0_rgba(38,38,36,0.16)]">
+              <label htmlFor="new-subject-name" className="block text-[9px] font-black tracking-[0.12em] text-[#666259]">새 과목 이름</label>
+              <form
+                className="mt-2 flex gap-2"
+                onSubmit={(event) => { event.preventDefault(); addSubject(); }}
+              >
+                <input
+                  id="new-subject-name"
+                  autoFocus
+                  value={newSubjectName}
+                  maxLength={30}
+                  onChange={(event) => { setNewSubjectName(event.target.value); setSubjectError(null); }}
+                  placeholder="예: 경제학 원론"
+                  className="min-w-0 flex-1 border border-[#bdb8ad] bg-white px-2.5 py-2 text-[10px] font-bold outline-none focus:border-[#255c99]"
+                />
+                <button type="submit" className="bg-[#262624] px-3 text-[9px] font-black text-white">추가</button>
+              </form>
+              {subjectError && <p role="alert" className="mt-2 text-[8.5px] font-bold text-[#a24b36]">{subjectError}</p>}
+              <p className="mt-2 text-[8px] leading-relaxed text-[#8c877d]">과목마다 그래프와 실행 기록이 별도로 저장됩니다.</p>
+            </div>
+          )}
         </div>
         <button
           type="button"
@@ -958,7 +1191,7 @@ export default function App() {
                   onClick={submitLearningRecord}
                   className="mt-auto border border-[#262624] bg-[#262624] px-3 py-2 text-[9.5px] font-black text-white transition hover:bg-[#46433d] disabled:cursor-not-allowed disabled:border-[#aaa59b] disabled:bg-[#aaa59b]"
                 >
-                  {phase === 'running' ? '분석 중…' : inputMode === 'share' ? '링크 불러오기 →' : '분석 시작 →'}
+                  <span className="whitespace-nowrap">{phase === 'running' ? '분석 중…' : inputMode === 'share' ? '링크 불러오기 ↗' : '분석 시작 →'}</span>
                 </button>
               </div>
             </div>
@@ -966,7 +1199,7 @@ export default function App() {
         </main>
 
         <aside className={`shrink-0 overflow-hidden border-l border-[#262624] transition-all duration-500 ${noteLayout || studyMode ? 'w-0 border-transparent opacity-0' : 'w-[420px] opacity-100'}`}>
-          <StreamPanel lines={lines} activeStep={activeStep} phase={phase} pipelineSteps={pipelineSteps} />
+          <StreamPanel lines={lines} phase={phase} pipelineSteps={pipelineSteps} />
         </aside>
       </div>
     </div>

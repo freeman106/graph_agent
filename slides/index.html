@@ -1,0 +1,1193 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GRAPHMIND 발표</title>
+<style>
+  :root{
+    --ink:#141413;
+    --ink-2:#3b3a37;
+    --mute:#75736d;
+    --faint:#a3a19a;
+    --line:#c4c2bc;
+    --line-2:#dedcd6;
+    --paper:#f6f5f2;
+    --panel:#eceae4;
+    --dark:#191918;
+    --dark-line:#3a3a38;
+    --dark-text:#d8d6d0;
+    --dark-mute:#8c8a86;
+    --sans:"Pretendard","Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif;
+    --mono:"D2Coding",Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:#2a2a28;font-family:var(--sans);color:var(--ink);overflow:hidden;-webkit-font-smoothing:antialiased}
+
+  .viewport{position:fixed;inset:0;display:grid;place-items:center}
+  .stage{position:relative;width:1280px;height:720px;background:var(--paper);
+    transform-origin:center center;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.45)}
+
+  .slide{position:absolute;inset:0;padding:38px 52px 52px;display:flex;flex-direction:column;
+    opacity:0;visibility:hidden;transform:translateY(10px);
+    transition:opacity .3s ease,transform .3s ease,visibility .3s}
+  .slide.active{opacity:1;visibility:visible;transform:none}
+
+  .kicker{font-family:var(--mono);font-size:12px;letter-spacing:.24em;color:var(--mute);
+    display:flex;align-items:center;gap:14px}
+  .kicker::after{content:"";flex:1;height:1px;background:var(--line)}
+  h2{margin-top:12px;font-size:40px;font-weight:900;letter-spacing:-.035em;line-height:1.1}
+  .sub{margin-top:10px;font-size:17px;line-height:1.55;color:var(--mute);font-weight:600}
+  .demo{margin-top:22px;flex:1;min-height:0;display:flex}
+  .foot{position:absolute;left:52px;right:52px;bottom:18px;display:flex;gap:14px;align-items:center;
+    font-family:var(--mono);font-size:11px;letter-spacing:.16em;color:var(--faint);
+    border-top:1px solid var(--line-2);padding-top:9px}
+  .foot .sep{flex:1}
+  .hint{font-family:var(--mono);font-size:11px;letter-spacing:.1em;color:var(--ink);
+    border:1px solid var(--ink);padding:3px 9px}
+
+  /* ── 표지 ───────────────────────────── */
+  .cover{padding:0}
+  .cover-art{position:absolute;right:20px;top:0;width:520px;height:100%}
+  .cover-inner{position:absolute;inset:0;padding:70px 52px 52px;display:flex;flex-direction:column}
+  .mark{width:60px;height:60px;background:var(--ink);color:var(--paper);display:grid;place-items:center;
+    font-size:22px;font-weight:900;letter-spacing:-.04em}
+  .cover h1{margin-top:34px;font-size:96px;font-weight:900;letter-spacing:-.055em;line-height:.9}
+  .cover .tag{margin-top:22px;font-size:22px;font-weight:900;letter-spacing:-.02em}
+  .cover .desc{margin-top:20px;font-size:18px;line-height:1.75;color:var(--ink-2);max-width:520px}
+  .cover .meta{margin-top:auto;display:flex;border:1px solid var(--line);width:max-content}
+  .cover .meta div{padding:13px 22px;border-right:1px solid var(--line)}
+  .cover .meta div:last-child{border-right:0}
+  .cover .meta span{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.16em;color:var(--mute)}
+  .cover .meta strong{display:block;margin-top:5px;font-size:19px;font-weight:900}
+
+  /* ── 앱 셸 ───────────────────────────── */
+  .app{flex:1;min-width:0;display:flex;flex-direction:column;border:1px solid var(--ink);
+    background:var(--paper);box-shadow:10px 10px 0 rgba(20,20,19,.10)}
+  .bar{height:52px;flex:0 0 52px;display:flex;align-items:center;gap:12px;padding:0 16px;
+    border-bottom:1px solid var(--ink);background:var(--panel)}
+  .bar .logo{width:28px;height:28px;background:var(--ink);color:var(--paper);display:grid;place-items:center;
+    font-size:11px;font-weight:900}
+  .bar b{font-size:15px;font-weight:900;letter-spacing:-.02em}
+  .bar .dim{font-family:var(--mono);font-size:11px;letter-spacing:.16em;color:var(--mute)}
+  .bar .stats{margin-left:auto;display:flex;height:100%;border-left:1px solid var(--line)}
+  .bar .stats div{min-width:86px;padding:0 14px;border-right:1px solid var(--line);
+    display:flex;flex-direction:column;justify-content:center}
+  .bar .stats span{font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--mute)}
+  .bar .stats strong{font-size:17px;font-weight:900;font-variant-numeric:tabular-nums}
+
+  /* ── 입력 도크 ───────────────────────────── */
+  .dock{flex:1;min-height:0;display:flex;flex-direction:column;padding:18px 20px 20px;background:var(--panel)}
+  .dock-head{display:flex;align-items:center;margin-bottom:14px}
+  .dock-head b{font-size:15px;font-weight:900;letter-spacing:.08em}
+  .dock-head .r{margin-left:auto;font-family:var(--mono);font-size:12px;letter-spacing:.16em;color:var(--faint)}
+  .modes{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+  .mode{border:1px solid var(--line);background:#faf9f6;padding:12px 14px;display:flex;align-items:center;gap:11px;
+    cursor:pointer;transition:border-color .15s,background .15s}
+  .mode:hover{border-color:var(--ink)}
+  .mode i{width:24px;height:24px;flex:0 0 24px;display:grid;place-items:center;background:#e5e2db;
+    font-family:var(--mono);font-size:12px;font-style:normal}
+  .mode span{font-size:14.5px;font-weight:900;color:var(--mute)}
+  .mode.sel{background:var(--ink);border-color:var(--ink)}
+  .mode.sel span{color:var(--paper)}
+  .mode.sel i{background:rgba(255,255,255,.16);color:var(--paper)}
+  .dock-row{flex:1;min-height:0;display:flex;gap:12px}
+  .paste{flex:1;min-width:0;border:1px solid var(--line);background:#faf9f6;padding:15px 17px;
+    font-size:15px;line-height:1.85;color:var(--ink-2);white-space:pre-wrap;overflow:hidden}
+  .paste.focus{border-color:var(--ink)}
+  .paste .ph{color:var(--faint)}
+  .caret{display:inline-block;width:9px;height:17px;background:var(--ink);vertical-align:-3px;margin-left:2px}
+  .blink{animation:blink 1s steps(1,end) infinite}
+  @keyframes blink{0%,49%{opacity:1}50%,100%{opacity:0}}
+  .side{width:210px;flex:0 0 210px;border:1px solid var(--line);background:#e4e1da;padding:15px;
+    display:flex;flex-direction:column}
+  .side .lab{font-family:var(--mono);font-size:11px;letter-spacing:.12em;color:var(--mute)}
+  .side .tip{margin-top:10px;font-size:13.5px;line-height:1.6;color:var(--ink-2)}
+  .side .tip.err{font-weight:800;color:var(--ink)}
+  .side .num{margin-top:12px;font-family:var(--mono);font-size:14px;color:var(--ink)}
+  .go{margin-top:auto;border:1px solid var(--ink);background:var(--ink);color:var(--paper);
+    padding:13px;font-size:14.5px;font-weight:900;text-align:center;cursor:pointer}
+  .go.busy{background:var(--paper);color:var(--ink)}
+  .go.off{background:#b3b0a9;border-color:#b3b0a9;cursor:default}
+  .go.press{transform:translate(2px,2px)}
+
+  /* ── 스트림 패널 ───────────────────────────── */
+  .stream{flex:1;min-width:0;display:flex;flex-direction:column;border:1px solid var(--ink);
+    background:var(--dark);color:var(--dark-text);box-shadow:10px 10px 0 rgba(20,20,19,.10)}
+  .stream .sh{height:48px;flex:0 0 48px;display:flex;align-items:center;padding:0 18px;
+    border-bottom:1px solid var(--dark-line)}
+  .stream .sh b{font-size:15px;font-weight:900;letter-spacing:.12em}
+  .stream .sh .st{margin-left:auto;display:flex;align-items:center;gap:10px;
+    font-family:var(--mono);font-size:12px;letter-spacing:.12em;color:var(--dark-mute)}
+  .dot{width:9px;height:9px;background:#5c5c58}
+  .dot.run{background:var(--dark-text);animation:pulse 1s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+  .pipe{padding:14px 18px;border-bottom:1px solid var(--dark-line)}
+  .pipe-head{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;
+    letter-spacing:.14em;color:var(--dark-mute);margin-bottom:12px}
+  .pipe-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:11px 22px}
+  .step{display:flex;align-items:center;gap:11px;min-width:0;opacity:.32}
+  .step i{width:24px;height:24px;flex:0 0 24px;display:grid;place-items:center;font-style:normal;
+    border:1px solid var(--dark-line);color:var(--dark-mute);font-family:var(--mono);font-size:11px}
+  .step .ko{font-size:14px;font-weight:800;color:var(--dark-mute);white-space:nowrap}
+  .step .en{font-family:var(--mono);font-size:10.5px;color:#61615d;white-space:nowrap}
+  .step.run{opacity:1}
+  .step.run i{border-color:var(--dark-text);color:var(--dark-text);animation:pulse 1s ease-in-out infinite}
+  .step.run .ko{color:#f2efe9}
+  .step.done{opacity:1}
+  .step.done i{border-color:var(--dark-text);color:var(--dark-text)}
+  .step.done .ko{color:var(--dark-mute)}
+  .log{flex:1;min-height:0;overflow:hidden;padding:14px 18px}
+  .ln{display:grid;grid-template-columns:30px 16px 1fr;font-family:var(--mono);font-size:13.5px;
+    line-height:1.6;color:var(--dark-mute);opacity:0;transform:translateY(4px);
+    transition:opacity .2s ease,transform .2s ease}
+  .ln.on{opacity:1;transform:none}
+  .ln .n{text-align:right;color:#4c4c49;font-variant-numeric:tabular-nums}
+  .ln .p{text-align:right}
+  .ln .t{padding-left:11px;white-space:pre-wrap}
+  .k-call{color:#f4f1eb;margin-top:9px;border-top:1px solid #292928;padding-top:9px}
+  .k-result{color:#cbc9c3}
+  .k-reason,.k-detail{color:#7c7c77}
+  .k-place{color:#f0ede7}
+  .k-edge{color:#918f89}
+  .k-warn{color:#f0ede7}
+  .k-fix{color:#b8b6b0}
+  .k-done{color:#fff;font-weight:700}
+
+  /* ── 지도 ───────────────────────────── */
+  .map{flex:1;min-width:0;position:relative;border:1px solid var(--ink);background:var(--paper);
+    overflow:hidden;box-shadow:10px 10px 0 rgba(20,20,19,.10)}
+  .map-bar{height:46px;display:flex;align-items:center;gap:14px;padding:0 16px;border-bottom:1px solid var(--line)}
+  .map-bar .t{font-size:12px;font-weight:900;letter-spacing:.16em;color:var(--mute)}
+  .map-bar .t{white-space:nowrap}
+  .map-bar .c{font-family:var(--mono);font-size:13.5px;color:var(--ink-2);
+    min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .filters{margin-left:auto;flex-shrink:0;display:flex;gap:3px;border:1px solid var(--line);padding:3px}
+  .filters button{border:0;background:transparent;font-family:inherit;font-size:13px;font-weight:800;
+    color:var(--mute);padding:6px 14px;cursor:pointer}
+  .filters button:hover{background:#e7e4dd}
+  .filters button.on{background:var(--ink);color:var(--paper)}
+  .map svg{position:absolute;inset:46px 0 0;width:100%;height:calc(100% - 46px);cursor:default}
+  .legend{position:absolute;left:14px;bottom:14px;border:1px solid var(--line);background:rgba(246,245,242,.94);
+    padding:12px 14px;font-size:12.5px;line-height:1.9;color:var(--ink-2)}
+  .legend div{display:flex;align-items:center;gap:9px}
+  .legend .sw{width:14px;height:14px;flex:0 0 14px;display:grid;place-items:center}
+
+  /* ── 개념 카드 ───────────────────────────── */
+  .card{border:1px solid var(--ink);background:#f1efe9;display:flex;flex-direction:column;overflow:hidden}
+  .card.float{position:absolute;top:60px;right:16px;bottom:16px;width:352px;z-index:5;
+    box-shadow:10px 10px 0 rgba(20,20,19,.14);opacity:0;transform:translateX(14px);
+    transition:opacity .28s ease,transform .28s ease;pointer-events:none}
+  .card.float.on{opacity:1;transform:none;pointer-events:auto}
+  .card .ch{border-bottom:1px solid var(--ink);padding:16px 18px}
+  .card .ch .top{display:flex;gap:12px;font-family:var(--mono);font-size:11px;letter-spacing:.14em;color:var(--mute)}
+  .card .ch h3{margin-top:10px;font-size:26px;font-weight:900;letter-spacing:-.035em;line-height:1.1}
+  .card .ch .stt{margin-top:10px;display:flex;align-items:center;gap:9px;font-size:13.5px;font-weight:800;color:var(--ink-2)}
+  .glyph{width:14px;height:14px;flex:0 0 14px}
+  .glyph.learned{border-radius:50%;background:var(--ink)}
+  .glyph.weak{background:var(--ink);transform:rotate(45deg)}
+  .glyph.unlearned{border-radius:50%;border:2px dashed var(--mute)}
+  .card .cb{padding:0 18px;overflow-y:auto;flex:1}
+  .card .cb::-webkit-scrollbar{width:5px}
+  .card .cb::-webkit-scrollbar-thumb{background:var(--line)}
+  .sec{padding:16px 0;border-top:1px solid var(--line-2)}
+  .sec:first-child{border-top:0}
+  .sec .h{font-family:var(--mono);font-size:11px;letter-spacing:.16em;color:var(--mute);margin-bottom:9px}
+  .sec p{font-size:14px;line-height:1.75;color:var(--ink-2)}
+  .rel{display:flex;align-items:center;gap:12px;width:100%;border:0;border-top:1px solid var(--line-2);
+    background:transparent;padding:10px 0;font-family:inherit;text-align:left;cursor:pointer}
+  .rel:first-of-type{border-top:0}
+  .rel .r{width:74px;flex:0 0 74px;font-family:var(--mono);font-size:11px;font-weight:800;color:var(--faint)}
+  .rel .nm{font-size:14px;font-weight:800}
+  .rel:hover .nm{text-decoration:underline}
+  .rel .a{margin-left:auto;color:var(--faint)}
+
+  .wp{border:1px solid var(--ink);background:#e7e4dd;padding:14px;display:flex;gap:12px;cursor:pointer;
+    align-items:flex-start}
+  .wp.solved{background:#f4f3ee;border-color:var(--line)}
+  .box{width:20px;height:20px;flex:0 0 20px;border:2px solid var(--ink);display:grid;place-items:center;
+    margin-top:2px;font-size:13px;font-weight:900;line-height:1}
+  .wp.solved .box{background:var(--ink);color:var(--paper)}
+  .wp .k{font-size:12px;font-weight:900;letter-spacing:.1em}
+  .wp .v{margin-top:8px;font-size:14px;line-height:1.7}
+  .wp.solved .v{color:var(--faint);text-decoration:line-through}
+  .ba{display:grid;grid-template-columns:70px 1fr;gap:12px 14px;margin-top:16px;font-size:14px;line-height:1.7}
+  .ba .k{font-family:var(--mono);font-size:11.5px;font-weight:900;letter-spacing:.1em;padding-top:2px}
+  .ba .before{color:var(--faint);text-decoration:line-through}
+  .ba.solved{opacity:.5}
+  .quote{border-left:2px solid var(--line);padding-left:13px;font-size:13.5px;line-height:1.7;color:var(--mute)}
+  .quote+.quote{margin-top:12px}
+  .quote .who{font-family:var(--mono);font-size:12px;color:var(--ink-2);margin-right:8px}
+
+  /* 04 확대 카드 */
+  .card.wide{flex:1;min-width:0;box-shadow:10px 10px 0 rgba(20,20,19,.10)}
+  .card.wide .ch h3{font-size:34px}
+  .card.wide .cb{padding:0 26px}
+  .card.wide .sec p,.card.wide .wp .v,.card.wide .ba{font-size:15.5px}
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:0}
+  .split>div{padding:18px 0}
+  .split>div:first-child{padding-right:24px;border-right:1px solid var(--line-2)}
+  .split>div:last-child{padding-left:24px}
+
+  /* ── 검수 ───────────────────────────── */
+  .rev{flex:1;display:flex;flex-direction:column;gap:14px}
+  .find{border:1px solid var(--line);background:#fff;padding:18px 20px;
+    opacity:0;transform:translateY(8px);transition:opacity .4s ease,transform .4s ease}
+  .find.on{opacity:1;transform:none}
+  .find .claim{font-size:17px;font-weight:900;line-height:1.5}
+  .find .why{margin-top:10px;font-size:14px;line-height:1.7;color:var(--mute)}
+  .find .fx{margin-top:13px;border-top:1px solid var(--line-2);padding-top:11px;display:flex;gap:11px;
+    font-size:14.5px;font-weight:800;opacity:0;transition:opacity .35s ease}
+  .find .fx.on{opacity:1}
+  .totals{display:flex;border:1px solid var(--ink);margin-top:auto}
+  .totals div{flex:1;padding:16px 20px;border-right:1px solid var(--line)}
+  .totals div:last-child{border-right:0}
+  .totals span{font-family:var(--mono);font-size:11px;letter-spacing:.14em;color:var(--mute)}
+  .totals strong{display:block;margin-top:6px;font-size:30px;font-weight:900;font-variant-numeric:tabular-nums}
+  .totals em{font-style:normal;font-size:14px;font-weight:800;color:var(--mute);margin-left:9px}
+
+  /* ── 내비 ───────────────────────────── */
+  .nav{position:fixed;left:0;right:0;bottom:14px;display:flex;align-items:center;justify-content:center;gap:10px;
+    font-family:var(--mono);font-size:11px;color:#8f8d87;letter-spacing:.14em;user-select:none}
+  .nav button{border:1px solid #5a5a56;background:transparent;color:#b6b4ae;font-family:var(--mono);
+    font-size:11px;padding:5px 12px;cursor:pointer}
+  .nav button:hover{background:#3d3d3a;color:#fff}
+  .pips{display:flex;gap:6px;margin:0 6px}
+  .pip{width:24px;height:3px;background:#54544f;cursor:pointer}
+  .pip.on{background:#e8e6e0}
+
+  /* ══════ PDF 출력 ══════
+     한 장이 곧 한 페이지다. 16:9 페이지를 직접 잡아 여백 없이 떨어뜨린다. */
+  @media print{
+    @page{size:1280px 720px;margin:0}
+    *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important;
+      animation:none !important;transition:none !important}
+    html,body{height:auto;overflow:visible;background:#fff}
+    .viewport{position:static;display:block}
+    .stage{width:1280px;height:auto;transform:none !important;box-shadow:none;overflow:visible}
+    .nav{display:none}
+
+    .slide{position:relative;inset:auto;width:1280px;height:720px;background:var(--paper);
+      opacity:1 !important;visibility:visible !important;transform:none !important;
+      break-after:page;page-break-after:always;break-inside:avoid;page-break-inside:avoid}
+    .slide:last-child{break-after:auto;page-break-after:auto}
+
+    /* 화면에서 순차로 등장하던 것들을 최종 상태로 굳힌다 */
+    .ln,.find,.fx,.step{opacity:1 !important;transform:none !important}
+    .card.float{opacity:1 !important;transform:none !important}
+    .caret{display:none}
+    .dot{background:#5c5c58 !important}
+
+    /* 처리 기록은 스크롤이 없으므로 두 단으로 펴서 전문을 싣는다 */
+    .log{overflow:visible;column-count:2;column-gap:30px;column-fill:balance}
+    .ln{font-size:11.5px;break-inside:avoid;page-break-inside:avoid}
+    .k-call{margin-top:7px;padding-top:7px}
+
+    /* 그림자는 잉크만 먹는다 */
+    .app,.stream,.map,.card.wide{box-shadow:none}
+    .card.float{box-shadow:none;border-width:1px}
+
+    /* 표지 그래프는 그려진 뒤 상태로 */
+    #coverArt line{stroke-dashoffset:0 !important}
+    #coverArt circle{opacity:1 !important}
+
+    /* 카드가 잘리지 않게 — 관계는 지도 자체가 이미 보여준다 */
+    #s3crelsec{display:none}
+    .card.float{top:16px}
+
+    /* 조작 안내는 종이에서 의미가 없다 */
+    .foot .hint{display:none}
+  }
+</style>
+</head>
+<body>
+
+<div class="viewport"><div class="stage" id="stage">
+
+<!-- ══════ 00 표지 ══════ -->
+<section class="slide cover" data-slide="0">
+  <svg class="cover-art" viewBox="0 0 520 720" id="coverArt"></svg>
+  <div class="cover-inner">
+    <div class="mark">GM</div>
+    <h1>GRAPHMIND</h1>
+    <div class="tag">개인 지식 지도</div>
+    <p class="desc">공부한 대화를 붙여넣으면 개념을 뽑아 지식그래프에 잇고, 어디서 막혔는지까지 짚어낸다.</p>
+    <div class="meta">
+      <div><span>CONCEPTS</span><strong>22</strong></div>
+      <div><span>PIPELINE</span><strong>6 STEPS</strong></div>
+      <div><span>SCHEMA</span><strong>v1</strong></div>
+    </div>
+  </div>
+  <div class="foot"><span>GRAPHMIND</span><span class="sep"></span><span>00 / 05</span></div>
+</section>
+
+<!-- ══════ 01 입력 ══════ -->
+<section class="slide" data-slide="1">
+  <div class="kicker"><span>01 INPUT</span></div>
+  <h2>붙여넣기만 한다</h2>
+  <p class="sub">정리도 태그도 필요 없다. 대화 원문이 그대로 근거가 된다.</p>
+  <div class="demo">
+    <div class="app">
+      <div class="bar">
+        <div class="logo">GM</div><b>GRAPHMIND</b><span class="dim">개인 지식 지도</span>
+        <div class="stats">
+          <div><span>학습</span><strong>16</strong></div>
+          <div><span>약점</span><strong>1</strong></div>
+          <div><span>미학습</span><strong>5</strong></div>
+          <div><span>이번 기록</span><strong id="s1new">0</strong></div>
+        </div>
+      </div>
+      <div class="dock">
+        <div class="dock-head"><b>새 학습 기록</b><span class="r" id="s1phase">CHOOSE WRITE RUN</span></div>
+        <div class="modes" id="s1modes"></div>
+        <div class="dock-row">
+          <div class="paste" id="paste"></div>
+          <div class="side">
+            <span class="lab" id="s1lab"></span>
+            <span class="tip" id="s1tip"></span>
+            <span class="num" id="s1num">0자</span>
+            <div class="go off" id="s1go">분석 시작 →</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="hint">모드 탭과 버튼을 눌러보세요</span><span class="sep"></span><span>01 / 05</span></div>
+</section>
+
+<!-- ══════ 02 실행 ══════ -->
+<section class="slide" data-slide="2">
+  <div class="kicker"><span>02 RUN</span></div>
+  <h2>단계를 정해주지 않는다</h2>
+  <p class="sub">대신 상태를 바꾸기 전에 왜 그렇게 판단했는지를 먼저 남긴다.</p>
+  <div class="demo">
+    <div class="stream">
+      <div class="sh"><b>처리 기록</b><span class="st"><i class="dot" id="s2dot"></i><span id="s2state">WAITING</span></span></div>
+      <div class="pipe">
+        <div class="pipe-head"><span>PIPELINE</span><span id="s2prog">0 / 6</span></div>
+        <div class="pipe-grid" id="s2steps"></div>
+      </div>
+      <div class="log" id="s2log"></div>
+    </div>
+  </div>
+  <div class="foot"><span class="hint">R 키로 다시 재생</span><span class="sep"></span><span>02 / 05</span></div>
+</section>
+
+<!-- ══════ 03 지도 ══════ -->
+<section class="slide" data-slide="3">
+  <div class="kicker"><span>03 MAP</span></div>
+  <h2>새 개념이 관계와 함께 지도에 붙는다</h2>
+  <div class="demo">
+    <div class="map" id="s3map">
+      <div class="map-bar">
+        <span class="t">ATTENTION / DECODING 구역</span>
+        <span class="c" id="s3count">13 CONCEPTS / 14 RELATIONS</span>
+        <div class="filters" id="s3filters">
+          <button data-f="all" class="on">전체</button>
+          <button data-f="weak">막힌 지점</button>
+          <button data-f="frontier">다음 경계</button>
+        </div>
+      </div>
+      <svg id="s3svg" viewBox="30 30 1010 700"></svg>
+      <div class="legend">
+        <div><span class="sw"><svg width="14" height="14"><circle cx="7" cy="7" r="6" fill="#141413"/></svg></span>학습 완료</div>
+        <div><span class="sw"><svg width="14" height="14"><circle cx="7" cy="7" r="5" fill="none" stroke="#75736d" stroke-width="2" stroke-dasharray="3 2"/></svg></span>미학습</div>
+        <div><span class="sw"><svg width="14" height="14"><rect x="2" y="2" width="10" height="10" transform="rotate(45 7 7)" fill="#141413"/></svg></span>약점</div>
+        <div><span class="sw"><svg width="14" height="14"><rect x="1.5" y="1.5" width="11" height="11" fill="#141413"/></svg></span>이번 대화에서 추가</div>
+      </div>
+      <div class="card float" id="s3card">
+        <div class="ch">
+          <div class="top"><span>CONCEPT CARD</span><span id="s3cid"></span></div>
+          <h3 id="s3cname"></h3>
+          <div class="stt"><span class="glyph" id="s3cglyph"></span><span id="s3cstatus"></span></div>
+        </div>
+        <div class="cb">
+          <div class="sec"><div class="h">DEFINITION</div><p id="s3cdef"></p></div>
+          <div class="sec" id="s3cwpsec"><div class="h">막힌 지점</div><p id="s3cwp"></p></div>
+          <div class="sec" id="s3crelsec"><div class="h" id="s3crelh">RELATIONS</div><div id="s3crels"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="hint">노드를 클릭하면 확대되고 카드가 열립니다</span><span class="sep"></span><span>03 / 05</span></div>
+</section>
+
+<!-- ══════ 04 약점 ══════ -->
+<section class="slide" data-slide="4">
+  <div class="kicker"><span>04 WEAKPOINT</span></div>
+  <h2>막힌 지점은 정정 전후로 남는다</h2>
+  <div class="demo">
+    <div class="card wide">
+      <div class="ch">
+        <div class="top"><span>CONCEPT CARD</span><span>№ KV-CACHE</span></div>
+        <h3>KV Cache</h3>
+        <div class="stt"><span class="glyph weak" id="s4glyph"></span><span id="s4status">약점 있음</span></div>
+      </div>
+      <div class="cb">
+        <div class="sec">
+          <div class="wp" id="s4wp">
+            <span class="box" id="s4box"></span>
+            <span>
+              <span class="k" id="s4k">막힌 지점, 해결하면 체크</span>
+              <span class="v" id="s4v">“학습할 때도 캐시를 쓰면 더 이득 아닌가”에서 막혔다. 추론이 느린 이유와 학습이 느린 이유를 같은 문제로 묶어서 봤다.</span>
+            </span>
+          </div>
+        </div>
+        <div class="sec" id="s4ba">
+          <div class="split">
+            <div>
+              <div class="h">BEFORE</div>
+              <p class="before" id="s4before">학습이 추론보다 오래 걸리니, 학습에 KV Cache를 적용하면 더 큰 이득을 볼 수 있다.</p>
+            </div>
+            <div>
+              <div class="h">AFTER</div>
+              <p id="s4after">학습은 teacher forcing으로 정답 시퀀스 전체를 이미 알고 있어 한 번의 forward로 병렬 계산한다. 이전 스텝이 없으니 재사용할 캐시도 없다.</p>
+            </div>
+          </div>
+        </div>
+        <div class="sec">
+          <div class="h">원문 근거 3건</div>
+          <div class="quote"><span class="who">#6 나</span>그럼 학습할 때도 캐시를 쓰나요? 학습이 추론보다 훨씬 오래 걸리니까 거기에 적용하면 더 이득일 것 같은데요.</div>
+          <div class="quote"><span class="who">#7 ChatGPT</span>학습은 teacher forcing으로 정답 시퀀스 전체를 이미 알고 있기 때문에 모든 위치를 단 한 번의 forward로 병렬 계산합니다.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="hint">체크박스를 눌러보세요</span><span class="sep"></span><span>04 / 05</span></div>
+</section>
+
+<!-- ══════ 05 검수 ══════ -->
+<section class="slide" data-slide="5">
+  <div class="kicker"><span>05 REVIEW</span></div>
+  <h2>자기가 만든 결과를 다시 지운다</h2>
+  <div class="demo">
+    <div class="rev">
+      <div class="find" data-r="0">
+        <div class="claim">Incremental Decoding과 Autoregressive Decoding은 같은 개념이라 병합</div>
+        <div class="why">근거: 두 노드의 근거 구간이 동일한 세 개 턴에서 나왔고, 대화 안에 둘을 구분하는 표현이 없다.</div>
+        <div class="fx" data-f="0"><span>↳</span><span>Incremental Decoding 제거, 간선 1개 흡수</span></div>
+      </div>
+      <div class="find" data-r="1">
+        <div class="claim">Flash Attention →[변형]→ Grouped-Query Attention은 근거가 없어 제거</div>
+        <div class="why">근거: 두 기법이 함께 언급된 턴이 없다. 하나는 연산 IO, 하나는 KV 메모리라 축이 다르다.</div>
+        <div class="fx" data-f="1"><span>↳</span><span>모델의 사전지식이 새어 나온 간선 1개 제거</span></div>
+      </div>
+      <div class="totals">
+        <div><span>전체 노드</span><strong id="s5n">26</strong><em id="s5ne"></em></div>
+        <div><span>전체 간선</span><strong id="s5e">35</strong><em id="s5ee"></em></div>
+        <div><span>남은 기록</span><strong id="s5w">전부 원문 대응</strong></div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>GRAPHMIND</span><span class="sep"></span><span>05 / 05</span></div>
+</section>
+
+</div></div>
+
+<nav class="nav">
+  <button id="prev">← PREV</button>
+  <div class="pips" id="pips"></div>
+  <button id="next">NEXT →</button>
+  <span id="counter">01 / 06</span>
+  <button id="replay">REPLAY</button>
+  <button id="print">PDF</button>
+</nav>
+
+<script>
+/* ════════ 무대 ════════ */
+const stage = document.getElementById('stage');
+function fit(){
+  const s = Math.max(.2, Math.min((innerWidth - 64) / 1280, (innerHeight - 104) / 720));
+  stage.style.transform = 'scale(' + s + ')';
+}
+addEventListener('resize', fit); fit();
+
+class Seq {
+  constructor(){ this.t = []; this.i = []; }
+  at(ms, fn){ this.t.push(setTimeout(fn, ms)); return this; }
+  loop(ms, fn){ const id = setInterval(fn, ms); this.i.push(id); return id; }
+  stop(id){ clearInterval(id); }
+  clear(){ this.t.forEach(clearTimeout); this.i.forEach(clearInterval); this.t = []; this.i = []; }
+}
+const seq = new Seq();
+
+/* ════════ 01 입력 — 실제 앱의 세 가지 입력 모드 ════════ */
+const MODES = [
+  { id:'conversation', label:'GPT 대화 원문', tip:'나: / ChatGPT: 형식의 학습 대화',
+    ph:'GPT와 나눈 학습 대화를 그대로 붙여넣으세요…', min:20, err:'분석할 학습 대화를 20자 이상 입력해 주세요.' },
+  { id:'share', label:'GPT 공유 링크', tip:'chatgpt.com/share 링크',
+    ph:'https://chatgpt.com/share/…', min:0, err:'ChatGPT 공유 링크 형식을 확인해 주세요.' },
+  { id:'reflection', label:'현재 학습 상황', tip:'이해한 내용, 막힌 지점, 궁금한 점',
+    ph:'예: 역전파의 계산 순서는 이해했지만, 왜 활성화 함수를 통과할 때 기울기가 작아지는지는 헷갈립니다.',
+    min:10, err:'이해한 내용이나 막힌 지점을 10자 이상 적어 주세요.' }
+];
+
+// contract/fixtures/kv_cache_conversation.json 원문 그대로 — 14턴 1,615자
+const CONV = [
+  '나: 트랜스포머로 문장을 생성할 때, 토큰이 길어질수록 점점 느려지는 게 체감돼요. 매 스텝마다 뭘 다시 계산하길래 그런 건가요?',
+  'ChatGPT: 자기회귀(autoregressive) 생성에서는 토큰을 하나 뽑을 때마다 지금까지의 시퀀스 전체를 다시 모델에 통과시킵니다. 그러면 이미 계산했던 앞쪽 토큰들의 Key와 Value도 매번 처음부터 다시 계산하게 되죠. 100번째 토큰을 뽑을 때 앞의 99개 토큰에 대한 K/V를 또 만드는 겁니다.',
+  '나: 그런데 앞쪽 토큰들의 K/V는 어차피 안 바뀌는 거 아닌가요? 뒤에 뭐가 붙든 앞쪽은 그대로일 것 같은데요.',
+  'ChatGPT: 정확합니다. Masked Attention 때문에 각 토큰은 자기 앞쪽만 볼 수 있으므로, 뒤에 토큰이 추가돼도 앞쪽 토큰의 Key/Value는 절대 변하지 않습니다. 그래서 한 번 계산한 K/V를 저장해두고 다음 스텝에서 재사용하는 게 KV Cache입니다. 매 스텝의 연산량이 시퀀스 길이에 비례하던 것이 상수로 줄어듭니다.',
+  '나: Query는 왜 캐시하지 않나요?',
+  'ChatGPT: 매 스텝에서 Query가 필요한 토큰은 지금 막 생성된 마지막 토큰 하나뿐이기 때문입니다. 과거 토큰들의 Query는 이미 그 시점에 쓰이고 역할이 끝났어요. 반대로 Key/Value는 새 Query가 계속 참조해야 하니 남겨둬야 합니다.',
+  '나: 그럼 학습할 때도 캐시를 쓰나요? 학습이 추론보다 훨씬 오래 걸리니까 거기에 적용하면 더 이득일 것 같은데요.',
+  'ChatGPT: 아니요, 학습에서는 KV Cache를 쓰지 않습니다. 여기서 전제가 하나 어긋났는데, 학습은 teacher forcing으로 정답 시퀀스 전체를 이미 알고 있기 때문에 모든 위치를 단 한 번의 forward로 병렬 계산합니다. 즉 이전 스텝이라는 것 자체가 존재하지 않아서 재사용할 캐시도 없습니다. KV Cache는 스텝이 순차적으로 진행되는 추론에서만 의미가 있는 최적화입니다.',
+  '나: 아, 학습은 한 번에 다 계산하는 거였군요. 그럼 캐시가 계속 쌓이면 메모리는 괜찮은가요?',
+  'ChatGPT: 그게 KV Cache의 대가입니다. 캐시 크기는 배치 × 레이어 × 헤드 × 시퀀스 길이 × head_dim에 비례해서 선형으로 커지고, 긴 컨텍스트에서는 모델 가중치보다 캐시가 더 큰 메모리를 먹기도 합니다. 그래서 Q 헤드들이 K/V 헤드를 공유하는 Grouped-Query Attention 같은 기법이 나왔습니다.',
+  '나: 그럼 Flash Attention도 같은 문제를 푸는 건가요?',
+  'ChatGPT: 목표가 다릅니다. Flash Attention은 어텐션 행렬 전체를 메모리에 쓰지 않고 타일 단위로 처리해서 HBM 왕복을 줄이는, 연산 시점의 IO 최적화입니다. 결과값은 기존 어텐션과 정확히 동일합니다. 반면 KV Cache는 스텝 사이에 상태를 남겨두는 저장 전략이라 축 자체가 다릅니다. 둘은 함께 쓸 수 있습니다.',
+  '나: 정리하면 KV Cache는 추론에서만 쓰는 거고, 메모리를 대가로 속도를 얻는 거네요.',
+  'ChatGPT: 네, 정확합니다. 추론 전용이고, 시간-메모리 트레이드오프입니다. 그리고 그 메모리 비용을 줄이는 방향이 Grouped-Query Attention이나 페이지 단위 캐시 관리 같은 후속 기법들입니다.'
+].join('\n\n');
+
+const s1 = { mode:0, text:'', typing:null, phase:'idle' };
+
+(function buildModes(){
+  const wrap = document.getElementById('s1modes');
+  MODES.forEach((m, i) => {
+    const b = document.createElement('div');
+    b.className = 'mode' + (i === 0 ? ' sel' : '');
+    b.innerHTML = '<i>' + (i + 1) + '</i><span></span>';
+    b.querySelector('span').textContent = m.label;
+    b.addEventListener('click', () => selectMode(i));
+    wrap.appendChild(b);
+  });
+})();
+
+function renderInput(err){
+  const m = MODES[s1.mode];
+  const paste = document.getElementById('paste');
+  const go = document.getElementById('s1go');
+  [...document.getElementById('s1modes').children].forEach((c, i) => c.classList.toggle('sel', i === s1.mode));
+  document.getElementById('s1lab').textContent = m.label;
+  const tip = document.getElementById('s1tip');
+  tip.textContent = err || m.tip;
+  tip.classList.toggle('err', !!err);
+  document.getElementById('s1num').textContent = s1.text.length.toLocaleString() + '자';
+  if (s1.text) {
+    paste.innerHTML = '<span id="typed"></span>' + (s1.phase === 'typing' ? '<span class="caret blink"></span>' : '');
+    document.getElementById('typed').textContent = s1.text;
+    paste.classList.add('focus');
+  } else {
+    paste.innerHTML = '<span class="ph"></span>';
+    paste.querySelector('.ph').textContent = m.ph;
+    paste.classList.remove('focus');
+  }
+  go.className = 'go' + (s1.phase === 'running' ? ' busy' : s1.text.trim() ? '' : ' off');
+  go.textContent = s1.phase === 'running' ? '분석 중…' : s1.mode === 1 ? '링크 불러오기 →' : '분석 시작 →';
+}
+
+function selectMode(i){
+  if (s1.phase === 'running' || i === s1.mode) return;
+  if (s1.typing) { seq.stop(s1.typing); s1.typing = null; }
+  s1.mode = i; s1.text = ''; s1.phase = 'idle';
+  document.getElementById('s1phase').textContent = 'CHOOSE WRITE RUN';
+  document.getElementById('s1new').textContent = '0';
+  renderInput();
+}
+
+function typeConversation(){
+  s1.phase = 'typing';
+  let i = 0;
+  s1.typing = seq.loop(28, () => {
+    if (i >= CONV.length) { seq.stop(s1.typing); s1.typing = null; s1.phase = 'idle'; renderInput(); return; }
+    i = Math.min(CONV.length, i + 4 + Math.floor(Math.random() * 5));
+    s1.text = CONV.slice(0, i);
+    renderInput();
+    // 실제 입력창처럼 커서를 따라 내려간다
+    const box = document.getElementById('paste');
+    box.scrollTop = box.scrollHeight;
+  });
+}
+
+document.getElementById('s1go').addEventListener('click', () => {
+  if (s1.phase === 'running') return;
+  const m = MODES[s1.mode];
+  const text = s1.text.trim();
+  if (!text) return;
+  if (s1.mode === 1 && !/^https?:\/\/(chat\.openai\.com|chatgpt\.com)\/share\//.test(text)) return renderInput(m.err);
+  if (text.length < m.min) return renderInput(m.err);
+  s1.phase = 'running';
+  renderInput();
+  document.getElementById('s1phase').textContent = '지도 갱신 중';
+  seq.at(1200, () => { document.getElementById('s1new').textContent = '4'; });
+  seq.at(2000, () => go(2));
+});
+
+function slide1(){
+  s1.mode = 0; s1.text = ''; s1.phase = 'idle';
+  document.getElementById('s1phase').textContent = 'CHOOSE WRITE RUN';
+  document.getElementById('s1new').textContent = '0';
+  renderInput();
+  seq.at(700, typeConversation);
+}
+
+/* ════════ 02 실행 ════════ */
+const STEPS = [
+  ['대화 읽기','parse_conversation'],['기존 노드 대조','search_nodes'],['지도에 배치','create_node'],
+  ['약점 탐지','quote_conversation'],['기록 갱신','mark_progress'],['결과 검수','merge_nodes']
+];
+const LOG = [
+  [0,'system','','대화 입력 감지 — 1,615자 / 14턴'],
+  [0,'call','>','[호출 중] parse_conversation(turns=14, chars=1615)'],
+  [0,'result','=','[결과] 대화에서 다룬 개념 9개 추출'],
+  [1,'call','>','[호출 중] search_nodes(candidates=9, graph_nodes=22)'],
+  [1,'result','=','[결과] 기존 노드 5개 일치, 신규 후보 4개'],
+  [1,'detail','','신규 → KV Cache, Autoregressive Decoding, Incremental Decoding, Flash Attention'],
+  [2,'call','>','[호출 중] create_node + link_nodes(new=4)'],
+  [2,'place','+','KV Cache — 지도에 배치'],
+  [2,'edge','','  └[선행 개념]→  Masked Attention → KV Cache'],
+  [2,'reason','','  근거: 앞쪽 K/V가 불변이라는 것이 캐시의 전제라고 대화가 설명함'],
+  [2,'result','=','[결과] 신규 노드 4개, 간선 10개 생성'],
+  [3,'call','>','[호출 중] quote_conversation(signals=["재질문","전제 오류"])'],
+  [3,'result','=','[결과] 약점 1건 탐지 → KV Cache'],
+  [4,'call','>','[호출 중] mark_progress(node_id="kv-cache", status="weak")'],
+  [4,'detail','','  정정 전후와 원문 인용 3건을 함께 기록'],
+  [5,'call','>','[호출 중] merge_nodes + unlink(scope="this_run")'],
+  [5,'warn','!','Incremental Decoding과 Autoregressive Decoding이 같은 개념이라 병합'],
+  [5,'fix','↳','노드 1개 제거'],
+  [5,'warn','!','Flash Attention →[변형]→ GQA는 대화에 근거가 없음'],
+  [5,'fix','↳','간선 1개 제거'],
+  [5,'done','■','실행 완료 — 노드 25개 / 간선 33개']
+];
+
+(function buildStream(){
+  const grid = document.getElementById('s2steps');
+  STEPS.forEach(([ko, en], i) => {
+    const d = document.createElement('div');
+    d.className = 'step';
+    d.innerHTML = '<i>' + (i + 1) + '</i><div><div class="ko"></div><div class="en"></div></div>';
+    d.querySelector('.ko').textContent = ko;
+    d.querySelector('.en').textContent = en;
+    grid.appendChild(d);
+  });
+  const log = document.getElementById('s2log');
+  LOG.forEach(([, kind, p, text], i) => {
+    const d = document.createElement('div');
+    d.className = 'ln k-' + kind;
+    d.innerHTML = '<span class="n"></span><span class="p"></span><span class="t"></span>';
+    d.querySelector('.n').textContent = String(i + 1).padStart(2, '0');
+    d.querySelector('.p').textContent = p;
+    d.querySelector('.t').textContent = text;
+    log.appendChild(d);
+  });
+})();
+
+function slide2(){
+  const steps = [...document.querySelectorAll('#s2steps .step')];
+  const lines = [...document.querySelectorAll('#s2log .ln')];
+  const log = document.getElementById('s2log');
+  const dot = document.getElementById('s2dot');
+  const state = document.getElementById('s2state');
+  const prog = document.getElementById('s2prog');
+
+  steps.forEach(s => s.className = 'step');
+  lines.forEach(l => l.classList.remove('on'));
+  log.scrollTop = 0;
+  dot.className = 'dot'; state.textContent = 'WAITING'; prog.textContent = '0 / 6';
+
+  seq.at(250, () => { dot.className = 'dot run'; state.textContent = 'RUNNING'; });
+  let t = 400;
+  LOG.forEach(([si, kind], i) => {
+    t += kind === 'call' ? 700 : 340;
+    seq.at(t, () => {
+      steps.forEach((s, k) => s.className = 'step' + (k < si ? ' done' : k === si ? ' run' : ''));
+      prog.textContent = si + ' / 6';
+      lines[i].classList.add('on');
+      log.scrollTop = Math.max(0, log.scrollHeight - log.clientHeight);
+    });
+  });
+  seq.at(t + 450, () => {
+    steps.forEach(s => s.className = 'step done');
+    prog.textContent = '6 / 6';
+    dot.className = 'dot'; state.textContent = 'COMPLETE';
+  });
+}
+
+/* ════════ 03 지도 — Graph.tsx 의 동작을 그대로 옮김 ════════ */
+const VB = { width:1060, height:760 };
+const R = 17;
+const REL = { prerequisite:'선행 개념', component:'구성 요소', variant:'변형', contrast:'대비' };
+const DASH = { contrast:'2 5', component:'7 4', variant:'1 4', prerequisite:null };
+
+const G = {
+  nodes: [
+    { id:'embedding', name:'Embedding', x:95, y:120, status:'learned',
+      def:'토큰을 고정 길이 벡터로 바꾸는 층. 이후 모든 연산의 입력이 된다.' },
+    { id:'positional-encoding', name:'Positional Encoding', x:90, y:300, status:'weak',
+      def:'순서 정보가 없는 어텐션에 위치를 주입하는 방법.',
+      wp:'사인 곡선 인코딩과 학습형 임베딩을 같은 것으로 알고 있었다.' },
+    { id:'query-key-value', name:'Query/Key/Value', x:262, y:95, status:'learned',
+      def:'같은 입력에서 만든 세 벡터. 무엇을 찾고, 무엇으로 찾히고, 무엇을 전달할지를 나눈다.' },
+    { id:'scaled-dot-product-attention', name:'Scaled Dot-Product', x:452, y:78, status:'learned',
+      def:'내적을 차원 제곱근으로 나눠 안정화한 뒤 softmax를 취하는 기본 어텐션 연산.' },
+    { id:'attention', name:'Attention', x:272, y:262, status:'learned',
+      def:'질의에 대해 관련 있는 위치에 가중치를 몰아주는 연산의 총칭.' },
+    { id:'self-attention', name:'Self-Attention', x:482, y:250, status:'learned',
+      def:'Q, K, V를 모두 같은 시퀀스에서 만드는 어텐션. 추론에서는 Q와 K/V가 비대칭이다.' },
+    { id:'multi-head-attention', name:'Multi-Head Attention', x:672, y:110, status:'learned',
+      def:'여러 개의 어텐션을 병렬로 두어 서로 다른 관계를 동시에 보게 한 구조.' },
+    { id:'grouped-query-attention', name:'Grouped-Query Attn.', x:880, y:180, status:'unlearned',
+      def:'여러 Q 헤드가 K/V 헤드를 공유해 캐시 메모리를 줄이는 기법.' },
+    { id:'cross-attention', name:'Cross-Attention', x:712, y:288, status:'unlearned',
+      def:'Q는 디코더에서, K/V는 인코더에서 오는 어텐션.' },
+    { id:'masked-attention', name:'Masked Attention', x:330, y:430, status:'learned',
+      def:'미래 위치의 점수를 -inf로 만들어 각 토큰이 자기 앞쪽만 보게 하는 어텐션. KV Cache가 성립하는 전제다.' },
+    { id:'greedy-decoding', name:'Greedy Decoding', x:120, y:520, status:'learned',
+      def:'매 스텝 확률이 가장 높은 토큰 하나를 고르는 가장 단순한 선택 규칙.' },
+    { id:'beam-search', name:'Beam Search', x:105, y:672, status:'unlearned',
+      def:'여러 후보 경로를 동시에 유지하며 누적 확률이 높은 문장을 찾는 탐색.' },
+    { id:'temperature-sampling', name:'Temperature Sampling', x:288, y:672, status:'unlearned',
+      def:'확률 분포를 온도로 눌러 펴거나 세워서 다양성을 조절하는 샘플링.' }
+  ],
+  edges: [
+    ['embedding','positional-encoding','prerequisite'],
+    ['embedding','query-key-value','prerequisite'],
+    ['query-key-value','attention','component'],
+    ['scaled-dot-product-attention','attention','variant'],
+    ['positional-encoding','attention','prerequisite'],
+    ['attention','self-attention','prerequisite'],
+    ['scaled-dot-product-attention','self-attention','component'],
+    ['multi-head-attention','self-attention','variant'],
+    ['masked-attention','self-attention','variant'],
+    ['cross-attention','self-attention','contrast'],
+    ['grouped-query-attention','multi-head-attention','variant'],
+    ['masked-attention','greedy-decoding','prerequisite'],
+    ['greedy-decoding','beam-search','prerequisite'],
+    ['temperature-sampling','greedy-decoding','contrast']
+  ]
+};
+
+const NEW = [
+  { node:{ id:'kv-cache', name:'KV Cache', x:568, y:430, status:'learned', isNew:true,
+      def:'자기회귀 생성에서 이전 토큰들의 Key/Value를 저장해두고 재사용해, 매 스텝의 재계산을 없애는 추론 전용 최적화.',
+      wp:'“학습할 때도 캐시를 쓰면 더 이득 아닌가”에서 막혔다. 추론이 느린 이유와 학습이 느린 이유를 같은 문제로 묶어서 봤다.' },
+    edges:[['masked-attention','kv-cache','prerequisite'],['kv-cache','self-attention','component'],
+           ['kv-cache','grouped-query-attention','prerequisite']] },
+  { node:{ id:'autoregressive-decoding', name:'Autoregressive Decoding', x:322, y:580, status:'learned', isNew:true,
+      def:'이전까지 생성한 토큰을 다시 입력으로 넣어 다음 토큰을 하나씩 뽑는 순차 생성 방식.' },
+    edges:[['masked-attention','autoregressive-decoding','prerequisite'],
+           ['autoregressive-decoding','kv-cache','prerequisite'],
+           ['autoregressive-decoding','greedy-decoding','prerequisite']] },
+  { node:{ id:'incremental-decoding', name:'Incremental Decoding', x:565, y:648, status:'learned', isNew:true,
+      def:'스텝마다 새 토큰 하나 분량만 추가로 계산하는 생성 방식.' },
+    edges:[['kv-cache','incremental-decoding','component']] },
+  { node:{ id:'flash-attention', name:'Flash Attention', x:838, y:470, status:'learned', isNew:true,
+      def:'어텐션 행렬을 메모리에 쓰지 않고 타일 단위로 처리해 HBM 왕복을 줄이는 IO 최적화.' },
+    edges:[['flash-attention','self-attention','variant'],['flash-attention','kv-cache','contrast'],
+           ['flash-attention','grouped-query-attention','variant']] }
+];
+
+const M = {
+  nodes: [], edges: [], selected: null, hover: null, filter: 'all',
+  view: { x:30, y:30, width:1010, height:700 }, frame: null
+};
+const FULL = { x:30, y:30, width:1010, height:700 };
+const ASPECT = FULL.width / FULL.height;
+const svg = document.getElementById('s3svg');
+const NS = 'http://www.w3.org/2000/svg';
+const el = (t, a) => { const e = document.createElementNS(NS, t); for (const k in a) if (a[k] != null) e.setAttribute(k, a[k]); return e; };
+const byId = id => M.nodes.find(n => n.id === id);
+
+function constrain(c){
+  const width = Math.max(360, Math.min(FULL.width, c.width));
+  const height = width / ASPECT;
+  return {
+    x: Math.max(FULL.x - 60, Math.min(FULL.x + FULL.width - width + 60, c.x)),
+    y: Math.max(FULL.y - 60, Math.min(FULL.y + FULL.height - height + 60, c.y)),
+    width, height
+  };
+}
+function fitNeighborhood(list){
+  const minX = Math.min(...list.map(n => n.x)) - 70;
+  const maxX = Math.max(...list.map(n => n.x)) + 190;
+  const minY = Math.min(...list.map(n => n.y)) - 70;
+  const maxY = Math.max(...list.map(n => n.y)) + 100;
+  const width = Math.max(520, maxX - minX, (maxY - minY) * ASPECT);
+  const height = width / ASPECT;
+  return constrain({ x:(minX + maxX - width) / 2, y:(minY + maxY - height) / 2, width, height });
+}
+function setView(v){
+  M.view = { ...v };
+  svg.setAttribute('viewBox', `${v.x} ${v.y} ${v.width} ${v.height}`);
+}
+function animateView(target, duration){
+  if (M.printing) return setView(target);
+  const start = { ...M.view };
+  const t0 = performance.now();
+  if (M.frame) cancelAnimationFrame(M.frame);
+  const tick = now => {
+    const p = Math.min(1, (now - t0) / duration);
+    const e = 1 - Math.pow(1 - p, 3);
+    M.view = {
+      x: start.x + (target.x - start.x) * e, y: start.y + (target.y - start.y) * e,
+      width: start.width + (target.width - start.width) * e,
+      height: start.height + (target.height - start.height) * e
+    };
+    svg.setAttribute('viewBox', `${M.view.x} ${M.view.y} ${M.view.width} ${M.view.height}`);
+    if (p < 1) M.frame = requestAnimationFrame(tick);
+  };
+  M.frame = requestAnimationFrame(tick);
+}
+
+function neighborsOf(id){
+  const s = new Set();
+  M.edges.forEach(e => { if (e.from === id) s.add(e.to); if (e.to === id) s.add(e.from); });
+  return s;
+}
+function frontierSet(){
+  const studied = new Set(M.nodes.filter(n => n.status !== 'unlearned').map(n => n.id));
+  return new Set(M.nodes.filter(n => n.status === 'unlearned')
+    .filter(n => M.edges.some(e => (e.from === n.id && studied.has(e.to)) || (e.to === n.id && studied.has(e.from))))
+    .map(n => n.id));
+}
+function contextOf(seed){
+  const base = new Set(seed);
+  const ids = new Set(seed);
+  M.edges.forEach(e => { if (base.has(e.from)) ids.add(e.to); if (base.has(e.to)) ids.add(e.from); });
+  return ids;
+}
+function wrap(name, max){
+  const words = name.split(' ');
+  const out = []; let line = '';
+  words.forEach(w => {
+    if ((line + ' ' + w).trim().length > max && line) { out.push(line); line = w; }
+    else line = (line + ' ' + w).trim();
+  });
+  if (line) out.push(line);
+  return out;
+}
+
+function drawMap(){
+  svg.textContent = '';
+  const defs = el('defs');
+  [['ar','#8d8b85'],['ar2','#141413']].forEach(([id, fill]) => {
+    const m = el('marker', { id, viewBox:'0 0 8 8', refX:7, refY:4, markerWidth:6, markerHeight:6, orient:'auto-start-reverse' });
+    m.appendChild(el('path', { d:'M0 0 L8 4 L0 8Z', fill })); defs.appendChild(m);
+  });
+  const pat = el('pattern', { id:'grid', width:32, height:32, patternUnits:'userSpaceOnUse' });
+  pat.appendChild(el('path', { d:'M 32 0 L 0 0 0 32', fill:'none', stroke:'#dcdad4', 'stroke-width':.6 }));
+  defs.appendChild(pat);
+  svg.appendChild(defs);
+  const bg = el('rect', { x:-200, y:-200, width:1600, height:1200, fill:'url(#grid)' });
+  bg.addEventListener('click', () => select(null));
+  svg.appendChild(bg);
+
+  // 종이에서는 흐리게 죽인 노드가 읽히지 않는다. 인쇄할 때는 전부 살린다.
+  const focus = M.printing ? null : (M.hover || M.selected);
+  const near = focus ? neighborsOf(focus) : new Set();
+  const frontier = frontierSet();
+  const weakCtx = contextOf(M.nodes.filter(n => n.status === 'weak').map(n => n.id));
+  const frontCtx = contextOf([...frontier]);
+  const pass = id => M.filter === 'weak' ? weakCtx.has(id) : M.filter === 'frontier' ? frontCtx.has(id) : true;
+
+  const gE = el('g'), gL = el('g', { 'pointer-events':'none' }), gN = el('g');
+  svg.appendChild(gE); svg.appendChild(gL); svg.appendChild(gN);
+
+  M.edges.forEach(e => {
+    const a = byId(e.from), b = byId(e.to);
+    if (!a || !b) return;
+    const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1;
+    const ux = dx / d, uy = dy / d;
+    const focused = focus && (e.from === focus || e.to === focus);
+    const dim = !(pass(e.from) && pass(e.to)) || (focus && !focused);
+    gE.appendChild(el('line', {
+      x1:a.x + ux * (R + 4), y1:a.y + uy * (R + 4), x2:b.x - ux * (R + 9), y2:b.y - uy * (R + 9),
+      stroke: e.isNew ? '#141413' : focused ? '#141413' : '#a6a49e',
+      'stroke-width': e.isNew || focused ? 2.2 : 1.3,
+      'stroke-dasharray': DASH[e.rel], 'marker-end': `url(#${e.isNew ? 'ar2' : 'ar'})`,
+      opacity: dim ? .1 : .7
+    }));
+    if (!e.isNew && !focused) return;
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    const text = REL[e.rel], w = text.length * 15 + 18;
+    const lab = el('g', { opacity: dim ? 0 : 1 });
+    lab.appendChild(el('rect', { x:mx - w / 2, y:my - 13, width:w, height:26, fill:'#f6f5f2', stroke:'#141413' }));
+    const tx = el('text', { x:mx, y:my + 5.5, 'text-anchor':'middle', 'font-size':14, 'font-weight':700, fill:'#141413' });
+    tx.textContent = text;
+    lab.appendChild(tx); gL.appendChild(lab);
+  });
+
+  M.nodes.forEach(n => {
+    const isFocus = focus === n.id;
+    const dim = !pass(n.id) || (focus && !isFocus && !near.has(n.id));
+    const g = el('g', { transform:`translate(${n.x},${n.y})`, opacity: dim ? .16 : 1,
+      style:'cursor:pointer;transition:opacity 160ms ease', 'data-node':n.id });
+    if (n.flash) g.appendChild(el('circle', { r:26, fill:'none', stroke:'#141413', 'stroke-width':2, opacity:.35 }));
+    if (n.isNew) {
+      g.appendChild(el('rect', { x:-19, y:-19, width:38, height:38, fill:'none', stroke:'#141413',
+        'stroke-width':1.4, 'stroke-dasharray':'4 3' }));
+    }
+    if (n.status === 'weak') {
+      g.appendChild(el('rect', { x:-13, y:-13, width:26, height:26, transform:'rotate(45)', fill:'#141413' }));
+      g.appendChild(el('rect', { x:-5, y:-5, width:10, height:10, transform:'rotate(45)', fill:'#f6f5f2' }));
+    } else if (n.isNew) {
+      g.appendChild(el('rect', { x:-12, y:-12, width:24, height:24, fill:'#141413' }));
+    } else if (n.status === 'learned') {
+      g.appendChild(el('circle', { r:12, fill:'#141413' }));
+    } else {
+      g.appendChild(el('circle', { r:10, fill:'#f6f5f2', stroke:'#75736d', 'stroke-width':2.4, 'stroke-dasharray':'3 2' }));
+    }
+    if (frontier.has(n.id)) {
+      const t = el('text', { x:0, y:-30, 'text-anchor':'middle', 'font-size':12, 'font-weight':900, fill:'#141413' });
+      t.textContent = 'NEXT'; g.appendChild(t);
+    }
+    const lines = wrap(n.name, 18);
+    const w = Math.max(...lines.map(l => l.length)) * 9.6 + 14;
+    g.appendChild(el('rect', { x:-6, y:22, width:w, height:lines.length * 24 + 6, fill:'#f6f5f2', 'fill-opacity':.92 }));
+    const label = el('text', { x:1, 'font-size':20, 'font-weight': isFocus ? 900 : 650, fill:'#2a2a27' });
+    lines.forEach((l, i) => {
+      const ts = el('tspan', { x:1, y:42 + i * 24 }); ts.textContent = l; label.appendChild(ts);
+    });
+    g.appendChild(label);
+    g.addEventListener('mouseenter', () => { M.hover = n.id; drawMap(); });
+    g.addEventListener('mouseleave', () => { M.hover = null; drawMap(); });
+    g.addEventListener('click', ev => { ev.stopPropagation(); select(n.id); });
+    gN.appendChild(g);
+  });
+
+  // 실제 앱의 CONCEPT INDEX — 겹침을 피해 상단 바에 띄운다
+  const hov = M.hover ? byId(M.hover) : null;
+  const bar = document.getElementById('s3count');
+  if (hov) {
+    const conn = M.edges.filter(e => e.from === hov.id || e.to === hov.id).length;
+    bar.textContent = hov.name + '  /  ' +
+      (hov.status === 'weak' ? '약점 기록 있음' : hov.status === 'learned' ? '학습 완료' : '아직 학습하지 않음') +
+      '  /  연결 ' + conn + '개';
+  } else {
+    countMap();
+  }
+}
+
+const STATUS_TEXT = { learned:'학습 완료', weak:'약점 있음', unlearned:'미학습' };
+
+function select(id){
+  M.selected = id;
+  const card = document.getElementById('s3card');
+  if (!id) {
+    card.classList.remove('on');
+    animateView(FULL, 560);
+    drawMap();
+    return;
+  }
+  const n = byId(id);
+  if (!n) return;
+  const list = [n, ...[...neighborsOf(id)].map(byId).filter(Boolean)];
+  animateView(fitNeighborhood(list), 720);
+  document.getElementById('s3cid').textContent = '№ ' + id.slice(0, 14).toUpperCase();
+  document.getElementById('s3cname').textContent = n.name;
+  document.getElementById('s3cglyph').className = 'glyph ' + n.status;
+  document.getElementById('s3cstatus').textContent = STATUS_TEXT[n.status] + (n.isNew ? ', 이번 대화에서 추가' : '');
+  document.getElementById('s3cdef').textContent = n.def;
+  const wpSec = document.getElementById('s3cwpsec');
+  wpSec.style.display = n.status === 'weak' && n.wp ? '' : 'none';
+  document.getElementById('s3cwp').textContent = n.wp || '';
+  const rels = M.edges.filter(e => e.from === id || e.to === id);
+  document.getElementById('s3crelh').textContent = 'RELATIONS / ' + rels.length;
+  const box = document.getElementById('s3crels');
+  box.textContent = '';
+  rels.forEach(e => {
+    const other = byId(e.from === id ? e.to : e.from);
+    if (!other) return;
+    const b = document.createElement('button');
+    b.className = 'rel';
+    b.innerHTML = '<span class="r"></span><span class="nm"></span><span class="a">→</span>';
+    b.querySelector('.r').textContent = REL[e.rel];
+    b.querySelector('.nm').textContent = other.name;
+    b.addEventListener('click', () => select(other.id));
+    box.appendChild(b);
+  });
+  card.classList.add('on');
+  drawMap();
+}
+
+document.getElementById('s3filters').addEventListener('click', ev => {
+  const b = ev.target.closest('button');
+  if (!b) return;
+  M.filter = b.dataset.f;
+  [...ev.currentTarget.children].forEach(c => c.classList.toggle('on', c === b));
+  drawMap();
+});
+
+function countMap(){
+  document.getElementById('s3count').textContent = M.nodes.length + ' CONCEPTS / ' + M.edges.length + ' RELATIONS';
+}
+
+function slide3(){
+  M.nodes = G.nodes.map(n => ({ ...n }));
+  M.edges = G.edges.map(([from, to, rel]) => ({ from, to, rel }));
+  M.selected = null; M.hover = null; M.filter = 'all';
+  M.view = { ...FULL };
+  svg.setAttribute('viewBox', `${FULL.x} ${FULL.y} ${FULL.width} ${FULL.height}`);
+  document.getElementById('s3card').classList.remove('on');
+  [...document.getElementById('s3filters').children].forEach((c, i) => c.classList.toggle('on', i === 0));
+  drawMap(); countMap();
+
+  let t = 800;
+  NEW.forEach(p => {
+    seq.at(t, () => {
+      M.nodes.push({ ...p.node, flash:true });
+      drawMap(); countMap();
+      seq.at(700, () => { const n = byId(p.node.id); if (n) { n.flash = false; drawMap(); } });
+    });
+    t += 480;
+    p.edges.forEach(([from, to, rel]) => {
+      seq.at(t, () => { M.edges.push({ from, to, rel, isNew:true }); drawMap(); countMap(); });
+      t += 360;
+    });
+    t += 200;
+  });
+
+  // 실제 실행의 5단계 — 약점이 탐지되면 노드 상태가 바뀐다
+  seq.at(t + 400, () => {
+    const kv = byId('kv-cache');
+    if (!kv) return;
+    kv.status = 'weak'; kv.flash = true;
+    drawMap();
+    seq.at(760, () => { kv.flash = false; drawMap(); });
+  });
+}
+
+/* ════════ 04 약점 카드 — 체크로 상태가 실제로 바뀐다 ════════ */
+let s4solved = false;
+function renderS4(){
+  document.getElementById('s4wp').classList.toggle('solved', s4solved);
+  document.getElementById('s4ba').style.opacity = s4solved ? .45 : 1;
+  document.getElementById('s4box').textContent = s4solved ? '✓' : '';
+  document.getElementById('s4k').textContent = s4solved ? '해결 완료' : '막힌 지점, 해결하면 체크';
+  document.getElementById('s4glyph').className = 'glyph ' + (s4solved ? 'learned' : 'weak');
+  document.getElementById('s4status').textContent = s4solved ? '학습 완료, 지도에 반영됨' : '약점 있음';
+}
+document.getElementById('s4wp').addEventListener('click', () => { s4solved = !s4solved; renderS4(); });
+function slide4(){ s4solved = false; renderS4(); }
+
+/* ════════ 05 검수 ════════ */
+function slide5(){
+  const finds = [...document.querySelectorAll('[data-slide="5"] .find')];
+  const fx = [...document.querySelectorAll('[data-slide="5"] .fx')];
+  const n = document.getElementById('s5n'), e = document.getElementById('s5e');
+  finds.forEach(f => f.classList.remove('on'));
+  fx.forEach(f => f.classList.remove('on'));
+  n.textContent = '26'; e.textContent = '35';
+  document.getElementById('s5ne').textContent = '';
+  document.getElementById('s5ee').textContent = '';
+  seq.at(400, () => finds[0].classList.add('on'));
+  seq.at(1500, () => { fx[0].classList.add('on'); n.textContent = '25'; document.getElementById('s5ne').textContent = '−1'; e.textContent = '34'; });
+  seq.at(2400, () => finds[1].classList.add('on'));
+  seq.at(3500, () => { fx[1].classList.add('on'); e.textContent = '33'; document.getElementById('s5ee').textContent = '−2'; });
+}
+
+/* ════════ 덱 ════════ */
+const slides = [...document.querySelectorAll('.slide')];
+const runners = [null, slide1, slide2, slide3, slide4, slide5];
+let cur = 0;
+const pips = document.getElementById('pips');
+slides.forEach((_, i) => {
+  const p = document.createElement('div');
+  p.className = 'pip';
+  p.addEventListener('click', () => go(i));
+  pips.appendChild(p);
+});
+function go(i){
+  cur = Math.max(0, Math.min(slides.length - 1, i));
+  seq.clear();
+  if (s1.typing) { s1.typing = null; }
+  slides.forEach((s, k) => s.classList.toggle('active', k === cur));
+  [...pips.children].forEach((p, k) => p.classList.toggle('on', k === cur));
+  document.getElementById('counter').textContent =
+    String(cur + 1).padStart(2, '0') + ' / ' + String(slides.length).padStart(2, '0');
+  if (runners[cur]) seq.at(200, runners[cur]);
+}
+document.getElementById('next').addEventListener('click', () => go(cur + 1));
+document.getElementById('prev').addEventListener('click', () => go(cur - 1));
+document.getElementById('replay').addEventListener('click', () => go(cur));
+addEventListener('keydown', ev => {
+  if (['ArrowRight',' ','PageDown'].includes(ev.key)) { ev.preventDefault(); go(cur + 1); }
+  else if (['ArrowLeft','PageUp','Backspace'].includes(ev.key)) { ev.preventDefault(); go(cur - 1); }
+  else if (ev.key === 'r' || ev.key === 'R') go(cur);
+  else if (ev.key === 'Home') go(0);
+  else if (ev.key === 'End') go(slides.length - 1);
+});
+
+/* ════════ PDF 출력 준비 ════════
+   인쇄에는 타이머가 없다. 모든 장을 실행이 끝난 상태로 굳혀 놓고 찍는다. */
+function prepPrint(){
+  seq.clear();
+
+  // 01 붙여넣기가 끝난 상태
+  s1.mode = 0; s1.text = CONV; s1.phase = 'idle'; s1.typing = null;
+  renderInput();
+  document.getElementById('s1phase').textContent = 'CHOOSE WRITE RUN';
+  document.getElementById('s1new').textContent = '0';
+
+  // 02 실행이 끝난 상태
+  document.querySelectorAll('#s2steps .step').forEach(s => s.className = 'step done');
+  document.querySelectorAll('#s2log .ln').forEach(l => l.classList.add('on'));
+  document.getElementById('s2prog').textContent = '6 / 6';
+  document.getElementById('s2state').textContent = 'COMPLETE';
+  document.getElementById('s2dot').className = 'dot';
+  document.getElementById('s2log').scrollTop = 0;
+
+  // 03 배치와 약점 표시까지 끝난 지도 + 열린 카드
+  slide3(); seq.clear();
+  NEW.forEach(p => {
+    M.nodes.push({ ...p.node });
+    p.edges.forEach(([from, to, rel]) => M.edges.push({ from, to, rel, isNew:true }));
+  });
+  const kv = byId('kv-cache');
+  if (kv) kv.status = 'weak';
+  M.printing = true;
+  select('kv-cache');
+  setView(FULL);
+  drawMap(); countMap();
+
+  // 04 아직 풀지 않은 약점
+  s4solved = false; renderS4();
+
+  // 05 검수 반영이 끝난 수치
+  document.querySelectorAll('[data-slide="5"] .find').forEach(f => f.classList.add('on'));
+  document.querySelectorAll('[data-slide="5"] .fx').forEach(f => f.classList.add('on'));
+  document.getElementById('s5n').textContent = '25';
+  document.getElementById('s5e').textContent = '33';
+  document.getElementById('s5ne').textContent = '−1';
+  document.getElementById('s5ee').textContent = '−2';
+}
+function endPrint(){
+  M.printing = false;
+  go(cur);
+}
+addEventListener('beforeprint', prepPrint);
+addEventListener('afterprint', endPrint);
+document.getElementById('print').addEventListener('click', () => window.print());
+
+/* 표지 그래프 */
+(function cover(){
+  const s = document.getElementById('coverArt');
+  const pts = [[110,120],[250,80],[360,170],[180,230],[300,290],[430,250],[100,350],[240,400],[370,440],
+               [460,350],[150,490],[280,540],[400,580],[480,480],[210,640],[340,670]];
+  const links = [[0,1],[1,2],[0,3],[3,4],[4,5],[2,5],[3,6],[6,7],[4,7],[7,8],[8,9],[5,9],[6,10],[10,11],
+                 [11,12],[12,13],[9,13],[10,14],[14,15],[15,12],[11,8]];
+  links.forEach(([a, b], i) => {
+    const l = el('line', { x1:pts[a][0], y1:pts[a][1], x2:pts[b][0], y2:pts[b][1], stroke:'#c2c0ba', 'stroke-width':1.3 });
+    const len = Math.hypot(pts[b][0] - pts[a][0], pts[b][1] - pts[a][1]);
+    l.setAttribute('stroke-dasharray', len); l.setAttribute('stroke-dashoffset', len);
+    l.style.animation = `draw 1s ease ${.25 + i * .09}s forwards`;
+    s.appendChild(l);
+  });
+  pts.forEach(([x, y], i) => {
+    const c = el('circle', { cx:x, cy:y, r: i % 4 === 0 ? 9 : 6.5,
+      fill: i % 3 === 0 ? '#141413' : '#f6f5f2', stroke:'#141413', 'stroke-width':1.8 });
+    c.style.opacity = 0;
+    c.style.animation = `fadeIn .5s ease ${.15 + i * .11}s forwards`;
+    s.appendChild(c);
+  });
+  const st = document.createElement('style');
+  st.textContent = '@keyframes draw{to{stroke-dashoffset:0}}@keyframes fadeIn{to{opacity:1}}';
+  document.head.appendChild(st);
+})();
+
+go(0);
+</script>
+</body>
+</html>

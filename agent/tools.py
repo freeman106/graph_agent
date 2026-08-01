@@ -104,9 +104,10 @@ def create_chapter(title: str) -> str:
     """단원을 만들고 chapter_id 를 돌려준다. 그래프에서 세로 줄 하나가 된다.
 
     강의안의 큰 목차 단위로 만들어라. 개념 하나마다 만들지 않는다.
+    제목은 한글 기준 5자 이내의 짧은 명사구여야 한다.
 
     Args:
-        title: 단원 제목. 예) 입력 표현
+        title: 5자 이내의 단원 제목. 예) 입력표현
     """
     return _json({"chapter_id": STORE.create_chapter(title)})
 

@@ -23,19 +23,13 @@ function constrainViewBox(candidate: ViewBox): ViewBox {
   };
 }
 
-/** 선택 노드와 직접 연결된 이웃의 노드·라벨이 함께 보이는 확대 범위. */
-function fitNeighborhood(nodes: RuntimeNode[], compact: boolean): ViewBox {
-  const minX = Math.min(...nodes.map((node) => node.x)) - 55;
-  const maxX = Math.max(...nodes.map((node) => node.x)) + 150;
-  const minY = Math.min(...nodes.map((node) => node.y)) - 55;
-  const maxY = Math.max(...nodes.map((node) => node.y)) + 80;
-  const contentWidth = maxX - minX;
-  const contentHeight = maxY - minY;
-  const width = Math.max(compact ? 390 : 440, contentWidth, contentHeight * VIEW_ASPECT);
+/** 이웃의 거리에 영향받지 않고 모든 노드를 같은 배율로 확대한다. */
+function fitSelected(node: RuntimeNode, compact: boolean): ViewBox {
+  const width = compact ? 410 : 460;
   const height = width / VIEW_ASPECT;
   return constrainViewBox({
-    x: (minX + maxX - width) / 2,
-    y: (minY + maxY - height) / 2,
+    x: node.x + 34 - width / 2,
+    y: node.y + 18 - height / 2,
     width,
     height,
   });
@@ -85,16 +79,7 @@ export default function Graph({ nodes, edges, selectedId, noteIds, filter, compa
 
   useEffect(() => {
     const selected = selectedId ? byId.get(selectedId) : null;
-    const neighborhood = selected
-      ? [
-          selected,
-          ...edges
-            .filter((edge) => edge.from_id === selected.id || edge.to_id === selected.id)
-            .map((edge) => byId.get(edge.from_id === selected.id ? edge.to_id : edge.from_id))
-            .filter((node): node is RuntimeNode => Boolean(node)),
-        ]
-      : [];
-    const target = selected ? fitNeighborhood(neighborhood, compact) : FULL_VIEW;
+    const target = selected ? fitSelected(selected, compact) : FULL_VIEW;
     const start = { ...viewBoxRef.current };
     const startedAt = performance.now();
     const duration = selected ? 720 : 560;
@@ -117,8 +102,8 @@ export default function Graph({ nodes, edges, selectedId, noteIds, filter, compa
     return () => {
       if (animationFrame.current !== null) cancelAnimationFrame(animationFrame.current);
     };
-  // 선택이 바뀌는 순간의 그래프 구조로 확대 범위를 잡는다. 상태/애니메이션 변경이
-  // 사용자가 휠로 맞춘 줌을 되돌리지 않도록 byId와 edges는 의존성에서 제외한다.
+  // 선택이 바뀌는 순간의 노드 위치로 확대 범위를 잡는다. 상태/애니메이션 변경이
+  // 사용자가 휠로 맞춘 줌을 되돌리지 않도록 byId는 의존성에서 제외한다.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId, compact]);
 
@@ -218,14 +203,17 @@ export default function Graph({ nodes, edges, selectedId, noteIds, filter, compa
       {!compact && columns.length > 0 && <g className="map-districts" pointerEvents="none">
         {columns.map((column, index) => (
           <g key={column.id}>
+            <rect x={column.x} y="18" width={column.width} height="46" fill="#f1eee6" fillOpacity="0.96" />
             {index > 0 && (
-              <path d={`M ${column.x - 8} 30 V ${GRAPH_VIEWBOX.height - 40}`} stroke="#b8b3a8" strokeWidth="1" />
+              <path d={`M ${column.x - 8} 72 V ${GRAPH_VIEWBOX.height - 40}`} stroke="#b8b3a8" strokeWidth="1" />
             )}
             <text x={column.x + 10} y="48">
-              {String(index + 1).padStart(2, '0')} / {column.title}
+              <title>{column.title}</title>
+              {String(index + 1).padStart(2, '0')} / {Array.from(column.title).slice(0, 5).join('')}
             </text>
           </g>
         ))}
+        <path d={`M 30 72 H ${GRAPH_VIEWBOX.width - 30}`} stroke="#aaa59b" strokeWidth="1" />
       </g>}
 
       <g>

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { RELATION_LABEL } from '../../contract/schema';
 import { anchorForNode as defaultAnchorForNode, LECTURE_NOTE_MAJOR_SECTIONS as DEFAULT_MAJORS, LECTURE_NOTE_META as DEFAULT_META, LECTURE_NOTE_SECTIONS as DEFAULT_SECTIONS, NOTE_INSERTIONS as DEFAULT_INSERTIONS } from '../lectureNote';
+import { askNoteQuestion } from '../agentApi';
 import type { NoteBundle } from '../graphNote';
 import type { RuntimeEdge, RuntimeNode, RuntimeNoteComment } from '../view';
 
@@ -112,6 +113,8 @@ export default function NoteWorkspace({
   const [selectionDraft, setSelectionDraft] = useState<SelectionDraft | null>(null);
   const [composerMode, setComposerMode] = useState<'question' | 'conversation' | 'highlight'>('question');
   const [composerText, setComposerText] = useState('');
+  const [questionLoading, setQuestionLoading] = useState(false);
+  const [questionError, setQuestionError] = useState<string | null>(null);
   const [expandedInsertions, setExpandedInsertions] = useState<Set<string>>(() => new Set());
   const [isEditingNote, setIsEditingNote] = useState(false);
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
@@ -270,15 +273,36 @@ export default function NoteWorkspace({
     setSelectionDraft({ anchorId: startParagraph.id, nodeId, quote, start, end: start + rawQuote.length });
     setComposerMode('question');
     setComposerText('');
+    setQuestionError(null);
   };
 
-  const submitComment = () => {
+  const submitComment = async () => {
     if (!selectionDraft || (composerMode !== 'highlight' && composerText.trim().length < 2)) return;
     const node = nodes.find((candidate) => candidate.id === selectionDraft.nodeId);
     const cleanInput = composerText.trim();
-    const id = `comment-note-${Date.now()}`;
     const isQuestion = composerMode === 'question';
     const isHighlight = composerMode === 'highlight';
+    let answer = '';
+    if (isQuestion) {
+      setQuestionLoading(true);
+      setQuestionError(null);
+      try {
+        const result = await askNoteQuestion({
+          question: cleanInput,
+          quote: selectionDraft.quote,
+          nodeName: node?.name ?? selectionDraft.nodeId,
+          document: node?.document.trim() || node?.summary || '',
+        });
+        answer = result.answer;
+      } catch (error) {
+        setQuestionError(error instanceof Error ? error.message : 'GPT 답변을 받지 못했습니다.');
+        return;
+      } finally {
+        setQuestionLoading(false);
+      }
+    }
+
+    const id = `comment-note-${Date.now()}`;
     const comment: RuntimeNoteComment = {
       id,
       anchorId: selectionDraft.anchorId,
@@ -288,7 +312,7 @@ export default function NoteWorkspace({
       body: isHighlight
         ? cleanInput || '개인 하이라이트'
         : isQuestion
-        ? `질문: ${cleanInput} · 답변: ${node?.summary ?? '선택한 문장은 이 개념의 핵심 관계를 설명하는 부분입니다.'}`
+        ? `질문: ${cleanInput}\n\n답변: ${answer}`
         : `붙여넣은 대화에서 이 문장과 관련된 학습 맥락을 추가했습니다: ${cleanInput.slice(0, 220)}${cleanInput.length > 220 ? '…' : ''}`,
       source: isHighlight ? '직접 표시 · 방금' : isQuestion ? '노트에서 직접 질문 · 방금' : '붙여넣은 GPT 대화 · 방금',
       relatedNodeId: null,
@@ -304,6 +328,7 @@ export default function NoteWorkspace({
     setActiveCommentId(id);
     setSelectionDraft(null);
     setComposerText('');
+    setQuestionError(null);
     window.getSelection()?.removeAllRanges();
     window.requestAnimationFrame(() => {
       commentCardRefs.current.get(id)?.focus({ preventScroll: false });
@@ -573,7 +598,8 @@ export default function NoteWorkspace({
                       <div className="mt-1 text-[8px] text-[#9a8772]">표시는 저장하거나 취소할 때까지 유지됩니다.</div>
                     </div>
                     <button
-                      onClick={() => { setSelectionDraft(null); setComposerText(''); window.getSelection()?.removeAllRanges(); }}
+                      disabled={questionLoading}
+                      onClick={() => { setSelectionDraft(null); setComposerText(''); setQuestionError(null); window.getSelection()?.removeAllRanges(); }}
                       className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-[#dfcfb5] bg-white/70 text-[12px] text-[#887663] transition hover:border-[#b98a54] hover:bg-white hover:text-[#654424]"
                       aria-label="선택 취소"
                       title="선택 취소"
@@ -590,7 +616,8 @@ export default function NoteWorkspace({
                       return (
                         <button
                           key={mode}
-                          onClick={() => setComposerMode(mode)}
+                          disabled={questionLoading}
+                          onClick={() => { setComposerMode(mode); setQuestionError(null); }}
                           className={`rounded-xl border px-2 py-2.5 text-left transition-all ${selected ? 'border-[#bd8042] bg-white text-[#704522] shadow-[0_5px_14px_rgba(123,78,32,0.13)] ring-2 ring-[#efd3a5]/55' : 'border-[#e4d6c0] bg-[#f9f3e8] text-[#786b5d] hover:border-[#cfb38b] hover:bg-white'}`}
                         >
                           <span className={`mb-1.5 grid h-5 w-5 place-items-center rounded-full text-[9px] font-black ${selected ? 'bg-[#80502d] text-white' : 'bg-[#ece1cf] text-[#8a6b4a]'}`}>{icon}</span>
@@ -607,15 +634,16 @@ export default function NoteWorkspace({
                     value={composerText}
                     onChange={(event) => setComposerText(event.target.value)}
                     onKeyDown={(event) => {
-                      if (!event.nativeEvent.isComposing && (event.ctrlKey || event.metaKey) && event.key === 'Enter') submitComment();
+                      if (!event.nativeEvent.isComposing && (event.ctrlKey || event.metaKey) && event.key === 'Enter') void submitComment();
                     }}
                     placeholder={composerMode === 'question' ? '왜 이 값은 다시 계산하지 않나요?' : composerMode === 'conversation' ? 'GPT와 나눈 대화를 붙여넣으세요…' : '필요하면 메모를 남기세요.'}
                     className="mt-2 h-28 w-full resize-none rounded-xl border border-[#dfcfb5] bg-white/85 p-3 text-[11px] leading-relaxed text-[#4f443a] outline-none transition placeholder:text-[#b4a492] focus:border-[#bc7d3e] focus:bg-white focus:ring-4 focus:ring-[#edc98d]/30"
                   />
                   <div className="mt-3 flex items-center justify-between gap-3">
-                    <span className="text-[7.5px] text-[#a08e7a]">Ctrl/⌘ + Enter로 저장</span>
-                    <button disabled={composerMode !== 'highlight' && composerText.trim().length < 2} onClick={submitComment} className="rounded-full bg-[#75492e] px-4 py-2.5 text-[9px] font-black text-white shadow-[0_6px_14px_rgba(95,57,35,0.22)] transition hover:-translate-y-0.5 hover:bg-[#5f3923] disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:translate-y-0">{composerMode === 'question' ? '질문 보내기' : composerMode === 'conversation' ? '대화 연결하기' : '하이라이트 저장'}</button>
+                    <span className="text-[7.5px] text-[#a08e7a]">{questionLoading ? 'GPT가 노트 근거로 답변 중…' : 'Ctrl/⌘ + Enter로 저장'}</span>
+                    <button disabled={questionLoading || (composerMode !== 'highlight' && composerText.trim().length < 2)} onClick={() => void submitComment()} className="rounded-full bg-[#75492e] px-4 py-2.5 text-[9px] font-black text-white shadow-[0_6px_14px_rgba(95,57,35,0.22)] transition hover:-translate-y-0.5 hover:bg-[#5f3923] disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:translate-y-0">{questionLoading ? '답변 받는 중…' : composerMode === 'question' ? '질문 보내기' : composerMode === 'conversation' ? '대화 연결하기' : '하이라이트 저장'}</button>
                   </div>
+                  {questionError && <p role="alert" className="mt-3 rounded-lg border border-[#dfb5a6] bg-[#fff4ef] px-3 py-2 text-[9px] font-bold text-[#8f4933]">{questionError}</p>}
                 </section>
               )}
 
@@ -661,7 +689,7 @@ export default function NoteWorkspace({
                           <span className={`grid h-5 w-5 shrink-0 place-items-center text-[9px] font-black text-white ${comment.createdNow ? 'bg-[#d85b35]' : 'bg-[#255c99]'}`}>{comment.createdNow ? '나' : 'AI'}</span>
                           <div className="min-w-0"><div className="flex items-center gap-2 text-[11px] font-black text-[#2f2e2a]"><span>{comment.title}</span>{comment.highlighted === false && <span className="border border-[#c9c1b5] px-1 py-0.5 text-[7px] text-[#8c877d]">표시 꺼짐</span>}</div><div className="mt-0.5 truncate font-mono-term text-[8.5px] text-[#8c877d]">{node?.name ?? comment.nodeId} · {comment.source}</div></div>
                         </div>
-                        <p className="mt-3 text-[11px] leading-[1.65] text-[#5f5b53]">{comment.body}</p>
+                        <p className="mt-3 whitespace-pre-line text-[11px] leading-[1.65] text-[#5f5b53]">{comment.body}</p>
                       </button>}
                       {editingCommentId !== comment.id && (
                         <div className="mt-3 border-t border-[#d8d3c9] pt-3">

@@ -1,13 +1,10 @@
 import { useEffect, useRef } from 'react';
-import { STEP_NAMES } from '../mock';
 import type { RuntimePipelineStep, StreamLine, StreamLineKind } from '../view';
 
 interface Props {
   lines: StreamLine[];
-  activeStep: number;
   phase: 'idle' | 'running' | 'done';
-  /** null이면 고정 목 파이프라인, 배열이면 실제 툴 호출 목록이다. */
-  pipelineSteps: RuntimePipelineStep[] | null;
+  pipelineSteps: RuntimePipelineStep[];
 }
 
 const KIND: Record<StreamLineKind, { className: string; prefix: string }> = {
@@ -23,9 +20,7 @@ const KIND: Record<StreamLineKind, { className: string; prefix: string }> = {
   done: { className: 'text-[#b5d0bd] font-bold', prefix: '■' },
 };
 
-const STEP_LABELS = ['대화 읽기', '기존 노드 대조', '지도에 배치', '약점 탐지', '기록 갱신', '결과 검수'];
-
-export default function StreamPanel({ lines, activeStep, phase, pipelineSteps }: Props) {
+export default function StreamPanel({ lines, phase, pipelineSteps }: Props) {
   const logRef = useRef<HTMLDivElement>(null);
   const pipelineRef = useRef<HTMLDivElement>(null);
 
@@ -35,10 +30,9 @@ export default function StreamPanel({ lines, activeStep, phase, pipelineSteps }:
 
   useEffect(() => {
     if (pipelineRef.current) pipelineRef.current.scrollTop = pipelineRef.current.scrollHeight;
-  }, [pipelineSteps?.length]);
+  }, [pipelineSteps.length]);
 
-  const isLive = pipelineSteps !== null;
-  const finishedCalls = pipelineSteps?.filter((step) => step.status === 'done').length ?? 0;
+  const finishedSteps = pipelineSteps.filter((step) => step.status === 'done').length;
 
   return (
     <div className="flex h-full flex-col bg-[#171a1b] text-[#d4d0c7]">
@@ -54,52 +48,38 @@ export default function StreamPanel({ lines, activeStep, phase, pipelineSteps }:
 
       <section className="shrink-0 border-b border-[#3b3f40] px-4 py-3">
         <div className="mb-2 flex items-center justify-between font-mono-term text-[8.5px] tracking-wider text-[#686f72]">
-          <span>{isLive ? 'LIVE TOOL CALLS' : 'PIPELINE'}</span>
-          <span>
-            {isLive
-              ? `${finishedCalls} / ${pipelineSteps.length}`
-              : `${Math.max(0, Math.min(activeStep + 1, STEP_NAMES.length))} / ${STEP_NAMES.length}`}
-          </span>
+          <span>EXECUTION PIPELINE</span>
+          <span>{pipelineSteps.length === 0 ? '0 STEPS' : `${finishedSteps} / ${pipelineSteps.length} STEPS`}</span>
         </div>
-        <div ref={pipelineRef} className="max-h-44 overflow-y-auto">
-          {isLive ? (
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-              {pipelineSteps.length === 0 && (
-                <div className="col-span-2 font-mono-term text-[9px] text-[#565c5f]">모델 판단 및 툴 호출 대기</div>
-              )}
-              {pipelineSteps.map((step, index) => {
-                const complete = step.status === 'done';
-                return (
-                  <div key={step.id} className="flex min-w-0 items-center gap-2">
+        <div ref={pipelineRef} className="max-h-52 overflow-y-auto">
+          {pipelineSteps.length === 0 && (
+            <div className="border border-dashed border-[#303536] px-3 py-4 text-center font-mono-term text-[9px] text-[#565c5f]">
+              실행하면 실제 단계와 도구가 표시됩니다
+            </div>
+          )}
+          <div className="flex flex-col gap-2">
+            {pipelineSteps.map((step, index) => {
+              const complete = step.status === 'done';
+              return (
+                <div key={step.id} className={`border px-2.5 py-2 ${complete ? 'border-[#34453a] bg-[#1a211d]' : 'border-[#624638] bg-[#211d1a]'}`}>
+                  <div className="flex items-center gap-2">
                     <span className={`grid h-4 w-4 shrink-0 place-items-center border font-mono-term text-[8px] ${complete ? 'border-[#6fa27c] text-[#8fbc9a]' : 'animate-pulse border-[#e47c57] text-[#e9a184]'}`}>
                       {complete ? '✓' : index + 1}
                     </span>
-                    <div className={`truncate font-mono-term text-[9px] ${complete ? 'text-[#899094]' : 'font-bold text-[#f0ede6]'}`}>
-                      {step.tool}
-                    </div>
+                    <span className={`text-[9.5px] font-bold ${complete ? 'text-[#aab8ad]' : 'text-[#f0ede6]'}`}>{step.label}</span>
+                    <span className="ml-auto font-mono-term text-[7.5px] text-[#596064]">STEP {(index + 1).toString().padStart(2, '0')}</span>
                   </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-              {STEP_NAMES.map((name, index) => {
-                const complete = index < activeStep || activeStep >= STEP_NAMES.length;
-                const active = index === activeStep;
-                return (
-                  <div key={name} className="flex min-w-0 items-center gap-2">
-                    <span className={`grid h-4 w-4 shrink-0 place-items-center border font-mono-term text-[8px] ${complete ? 'border-[#6fa27c] text-[#8fbc9a]' : active ? 'border-[#e47c57] text-[#e9a184]' : 'border-[#3b3f40] text-[#565c5f]'}`}>
-                      {complete ? '✓' : index + 1}
-                    </span>
-                    <div className="min-w-0">
-                      <div className={`truncate text-[9.5px] font-bold ${active ? 'text-[#f0ede6]' : complete ? 'text-[#899094]' : 'text-[#565c5f]'}`}>{STEP_LABELS[index]}</div>
-                      <div className="truncate font-mono-term text-[7.5px] text-[#4d5355]">{name}</div>
-                    </div>
+                  <div className="mt-1.5 flex flex-wrap gap-1 pl-6">
+                    {step.tools.map((tool) => (
+                      <span key={tool.id} className={`border px-1.5 py-0.5 font-mono-term text-[8px] ${tool.status === 'done' ? 'border-[#3e5144] text-[#83a88c]' : 'border-[#614536] text-[#d99576]'}`}>
+                        {tool.status === 'done' ? '✓' : '·'} {tool.name}
+                      </span>
+                    ))}
                   </div>
-                );
-              })}
-            </div>
-          )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       </section>
 

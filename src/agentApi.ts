@@ -27,9 +27,9 @@ export async function probeAgent(): Promise<AgentStatus> {
 }
 
 /** 실행이 끝난 뒤의 그래프. 저장소가 정본이라 이벤트로 재구성하지 않는다. */
-export async function fetchGraph(): Promise<Graph | null> {
+export async function fetchGraph(subjectId = 'deep-learning'): Promise<Graph | null> {
   try {
-    const res = await fetch('/api/agent/graph');
+    const res = await fetch(`/api/agent/graph?subjectId=${encodeURIComponent(subjectId)}`);
     if (!res.ok) return null;
     return (await res.json()) as Graph;
   } catch {
@@ -62,6 +62,38 @@ export function isShareUrl(value: string): boolean {
   return /^https?:\/\/(chatgpt\.com|chat\.openai\.com)\/share\//i.test(value.trim());
 }
 
+export interface NoteQuestion {
+  question: string;
+  quote: string;
+  nodeName: string;
+  document: string;
+}
+
+/** 선택한 노트 문장과 질문을 실제 모델에 보내 답을 받는다. */
+export async function askNoteQuestion(payload: NoteQuestion): Promise<{ answer: string }> {
+  let res: Response;
+  try {
+    res = await fetch('/api/agent/question', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    throw new Error('개발 서버에 연결할 수 없습니다.');
+  }
+
+  let body: { answer?: string; error?: string; reason?: string } = {};
+  try {
+    body = await res.json();
+  } catch {
+    /* JSON 본문이 없으면 아래 기본 오류 문구를 쓴다. */
+  }
+  if (!res.ok || !body.answer) {
+    throw new Error(body.error ?? body.reason ?? 'GPT 답변을 받지 못했습니다.');
+  }
+  return { answer: body.answer };
+}
+
 type Handlers = {
   onEvent: (event: StreamEvent) => void;
   onDone: () => void;
@@ -74,25 +106,25 @@ type Handlers = {
  * EventSource 는 GET 만 되므로 fetch 로 SSE 를 직접 읽는다.
  * 청크가 이벤트 경계에서 잘려 오므로 빈 줄 기준으로 모았다 넘긴다.
  */
-export async function runAgent(text: string, handlers: Handlers): Promise<void> {
-  return runEndpoint('/api/agent/run', text, handlers);
+export async function runAgent(text: string, handlers: Handlers, subjectId = 'deep-learning'): Promise<void> {
+  return runEndpoint('/api/agent/run', text, handlers, subjectId);
 }
 
 /**
  * 강의안으로 그래프의 첫 모습을 만든다. **빈 그래프에서 시작한다** —
  * 기존 노드가 남아 있으면 모델이 그걸 재사용해 강의안 기반인지 알 수 없게 된다.
  */
-export async function runLecture(text: string, handlers: Handlers): Promise<void> {
-  return runEndpoint('/api/agent/lecture', text, handlers);
+export async function runLecture(text: string, handlers: Handlers, subjectId = 'deep-learning'): Promise<void> {
+  return runEndpoint('/api/agent/lecture', text, handlers, subjectId);
 }
 
-async function runEndpoint(url: string, text: string, handlers: Handlers): Promise<void> {
+async function runEndpoint(url: string, text: string, handlers: Handlers, subjectId: string): Promise<void> {
   let res: Response;
   try {
     res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, subjectId }),
     });
   } catch {
     handlers.onError('개발 서버에 연결할 수 없습니다.');

@@ -67,11 +67,19 @@ export interface StreamLine {
   text: string;
 }
 
-/** 실제 스트림의 툴 호출 하나와 1:1로 대응하는 표시 항목. */
+/** 실제 스트림의 툴 호출 하나. */
+export interface RuntimePipelineTool {
+  id: number;
+  name: string;
+  status: 'running' | 'done';
+}
+
+/** 같은 목적의 툴 호출을 한데 묶은 실행 단계. */
 export interface RuntimePipelineStep {
   id: number;
-  tool: string;
+  label: string;
   status: 'running' | 'done';
+  tools: RuntimePipelineTool[];
 }
 
 /* ── 색 / 범례 ──────────────────────────────────────────────── */

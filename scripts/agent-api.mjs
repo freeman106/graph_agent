@@ -5,6 +5,7 @@
  *
  *   GET  /api/agent/status   이 개발 서버가 실제 실행을 할 수 있는지
  *   POST /api/agent/run      대화 텍스트를 받아 실행하고 계약 C 이벤트를 SSE 로 흘린다
+ *   POST /api/agent/question 선택한 노트 문장에 실제 모델 답변을 받는다
  *
  * **키가 없는 사람에게 오류가 나면 안 된다.** status 가 available:false 를 돌려주고
  * 프론트는 그때 목 데이터로 흐른다. 토글을 두지 않는 이유가 이것 — 사람이 켜고 끄면
@@ -12,11 +13,11 @@
  */
 
 import { spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { loadDotEnv, pythonEnv, ROOT, stateFile, venvExists, venvPython } from './lib.mjs';
+import { loadDotEnv, pythonEnv, ROOT, stateDir, stateFile, venvExists, venvPython } from './lib.mjs';
 import { fetchSharedConversation } from './chatgpt-share.mjs';
 
 /** 실행 가능 여부. 이유까지 돌려줘야 화면에서 안내할 수 있다. */
@@ -41,6 +42,23 @@ function readBody(req) {
   });
 }
 
+const DEFAULT_SUBJECT_ID = 'deep-learning';
+
+function normalizeSubjectId(value) {
+  const id = String(value ?? DEFAULT_SUBJECT_ID).trim();
+  return /^[a-z0-9][a-z0-9-]{0,63}$/i.test(id) ? id : DEFAULT_SUBJECT_ID;
+}
+
+function subjectStateFile(subjectId, name) {
+  if (subjectId === DEFAULT_SUBJECT_ID) return stateFile(name);
+  return path.join(stateDir(), 'subjects', subjectId, name);
+}
+
+function subjectPythonEnv(subjectId) {
+  if (subjectId === DEFAULT_SUBJECT_ID) return pythonEnv();
+  return pythonEnv({ KG_STATE_DIR: path.join(stateDir(), 'subjects', subjectId) });
+}
+
 // 그래프 상태가 JSON 파일 하나라 동시에 두 번 돌리면 서로를 덮어쓴다.
 let running = false;
 
@@ -56,10 +74,12 @@ export function agentApi() {
       // 실행이 끝난 뒤 프론트가 결과 그래프를 받아간다.
       // 이벤트만으로 그래프를 재구성하지 않는다 — 저장소가 정본이고,
       // 화면이 그걸 그대로 읽는 편이 어긋날 여지가 없다.
-      server.middlewares.use('/api/agent/graph', (_req, res) => {
+      server.middlewares.use('/api/agent/graph', (req, res) => {
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         try {
-          const raw = readFileSync(stateFile('graph.json'), 'utf-8');
+          const url = new URL(req.url ?? '/', 'http://localhost');
+          const subjectId = normalizeSubjectId(url.searchParams.get('subjectId'));
+          const raw = readFileSync(subjectStateFile(subjectId, 'graph.json'), 'utf-8');
           res.end(raw.replace(/^﻿/, ''));
         } catch {
           res.statusCode = 404;
@@ -91,6 +111,45 @@ export function agentApi() {
         }
       });
 
+      server.middlewares.use('/api/agent/question', async (req, res) => {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        const state = probe();
+        if (!state.available) {
+          res.statusCode = 409;
+          res.end(JSON.stringify(state));
+          return;
+        }
+
+        try {
+          const raw = await readBody(req);
+          const payload = JSON.parse(raw || '{}');
+          if (!String(payload.question ?? '').trim() || !String(payload.quote ?? '').trim()) {
+            res.statusCode = 400;
+            res.end(JSON.stringify({ error: '질문과 선택 문장이 필요합니다.' }));
+            return;
+          }
+
+          const child = spawn(
+            venvPython(),
+            ['-X', 'utf8', '-m', 'agent.qa'],
+            { cwd: ROOT, env: pythonEnv(), stdio: ['pipe', 'pipe', 'pipe'] },
+          );
+          let stdout = '';
+          let stderr = '';
+          child.stdout.on('data', (chunk) => { stdout += chunk.toString('utf-8'); });
+          child.stderr.on('data', (chunk) => { stderr += chunk.toString('utf-8'); });
+          child.stdin.end(JSON.stringify(payload));
+
+          const code = await new Promise((resolve) => child.on('close', resolve));
+          if (code !== 0) throw new Error(stderr.trim().slice(-800) || '모델 답변을 받지 못했습니다.');
+          const result = JSON.parse(stdout.replace(/^﻿/, ''));
+          res.end(JSON.stringify(result));
+        } catch (error) {
+          res.statusCode = 500;
+          res.end(JSON.stringify({ error: error.message ?? '질문 처리에 실패했습니다.' }));
+        }
+      });
+
       server.middlewares.use('/api/agent/run', (req, res) =>
         runAgent(req, res, (textPath) => [
           '--stream-json',
@@ -117,9 +176,12 @@ export function agentApi() {
         }
 
         let text = '';
+        let subjectId = DEFAULT_SUBJECT_ID;
         try {
           const raw = await readBody(req);
-          text = raw ? (JSON.parse(raw).text ?? '') : '';
+          const payload = raw ? JSON.parse(raw) : {};
+          text = payload.text ?? '';
+          subjectId = normalizeSubjectId(payload.subjectId);
         } catch {
           text = '';
         }
@@ -141,10 +203,14 @@ export function agentApi() {
         res.flushHeaders?.();
 
         running = true;
+        const childArgs = buildArgs(textPath);
+        const needsEmptyGraph = subjectId !== DEFAULT_SUBJECT_ID
+          && !existsSync(subjectStateFile(subjectId, 'graph.json'));
+        if (needsEmptyGraph && !childArgs.includes('--empty')) childArgs.unshift('--empty');
         const child = spawn(
           venvPython(),
-          ['-X', 'utf8', '-m', 'agent.main', ...buildArgs(textPath)],
-          { cwd: ROOT, env: pythonEnv() },
+          ['-X', 'utf8', '-m', 'agent.main', ...childArgs],
+          { cwd: ROOT, env: subjectPythonEnv(subjectId) },
         );
 
         // stdout 은 JSONL 이다. 줄이 잘려 올 수 있으므로 개행 기준으로 모았다 흘린다.

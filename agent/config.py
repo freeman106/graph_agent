@@ -65,15 +65,17 @@ def _local_state_dir() -> Path:
 STATE_DIR = _local_state_dir()
 STATE_DIR.mkdir(parents=True, exist_ok=True)
 
-# 기존 실행 결과는 최초 한 번 보존해서 사용자가 만든 그래프를 잃지 않는다.
-_LEGACY_STATE_DIRS = (STATE_DIR.parent, ROOT / "agent" / "state")
-for _state_name in ("graph.json", "last_run.jsonl"):
-    _local = STATE_DIR / _state_name
-    for _legacy_dir in _LEGACY_STATE_DIRS:
-        _legacy = _legacy_dir / _state_name
-        if not _local.exists() and _legacy.exists():
-            shutil.copy2(_legacy, _local)
-            break
+# 기존 실행 결과는 기본 과목에서만 최초 한 번 보존한다. KG_STATE_DIR로 분리된
+# 새 과목에 예전 기본 그래프를 복사하면 과목을 만들자마자 다른 지도가 섞인다.
+if not os.getenv("KG_STATE_DIR"):
+    _LEGACY_STATE_DIRS = (STATE_DIR.parent, ROOT / "agent" / "state")
+    for _state_name in ("graph.json", "last_run.jsonl"):
+        _local = STATE_DIR / _state_name
+        for _legacy_dir in _LEGACY_STATE_DIRS:
+            _legacy = _legacy_dir / _state_name
+            if not _local.exists() and _legacy.exists():
+                shutil.copy2(_legacy, _local)
+                break
 
 GRAPH_PATH = STATE_DIR / "graph.json"
 LAST_RUN_PATH = STATE_DIR / "last_run.jsonl"

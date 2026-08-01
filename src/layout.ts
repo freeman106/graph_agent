@@ -9,7 +9,7 @@
  * 더 중요하다.
  */
 
-export const GRAPH_VIEWBOX = { width: 1060, height: 760 };
+export const GRAPH_VIEWBOX = { width: 1060, height: 650 };
 
 export interface Point {
   x: number;
@@ -19,40 +19,40 @@ export interface Point {
 /** 시드 그래프 22개 노드의 고정 좌표. */
 export const NODE_LAYOUT: Record<string, Point> = {
   // 입력 처리
-  tokenization: { x: 90, y: 80 },
-  bpe: { x: 85, y: 180 },
-  embedding: { x: 110, y: 285 },
-  'positional-encoding': { x: 90, y: 390 },
-  'rotary-positional-embedding': { x: 80, y: 500 },
+  tokenization: { x: 90, y: 70 },
+  bpe: { x: 85, y: 150 },
+  embedding: { x: 110, y: 235 },
+  'positional-encoding': { x: 90, y: 320 },
+  'rotary-positional-embedding': { x: 80, y: 405 },
 
   // 어텐션 코어
-  softmax: { x: 275, y: 70 },
-  'query-key-value': { x: 255, y: 175 },
-  attention: { x: 250, y: 290 },
-  'scaled-dot-product-attention': { x: 420, y: 120 },
-  'self-attention': { x: 410, y: 260 },
-  'multi-head-attention': { x: 575, y: 170 },
-  'masked-attention': { x: 420, y: 390 },
-  'cross-attention': { x: 595, y: 315 },
+  softmax: { x: 275, y: 65 },
+  'query-key-value': { x: 255, y: 145 },
+  attention: { x: 250, y: 235 },
+  'scaled-dot-product-attention': { x: 420, y: 105 },
+  'self-attention': { x: 410, y: 215 },
+  'multi-head-attention': { x: 575, y: 145 },
+  'masked-attention': { x: 420, y: 320 },
+  'cross-attention': { x: 595, y: 260 },
 
   // 블록 구성
-  'feed-forward-network': { x: 750, y: 85 },
-  'layer-normalization': { x: 900, y: 160 },
-  'transformer-block': { x: 765, y: 245 },
-  'residual-connection': { x: 930, y: 300 },
-  'encoder-decoder': { x: 860, y: 390 },
-  'grouped-query-attention': { x: 730, y: 430 },
+  'feed-forward-network': { x: 750, y: 75 },
+  'layer-normalization': { x: 900, y: 135 },
+  'transformer-block': { x: 765, y: 205 },
+  'residual-connection': { x: 930, y: 250 },
+  'encoder-decoder': { x: 860, y: 320 },
+  'grouped-query-attention': { x: 730, y: 350 },
 
   // 디코딩
-  'greedy-decoding': { x: 185, y: 570 },
-  'beam-search': { x: 140, y: 690 },
-  'temperature-sampling': { x: 330, y: 675 },
+  'greedy-decoding': { x: 185, y: 430 },
+  'beam-search': { x: 140, y: 480 },
+  'temperature-sampling': { x: 330, y: 475 },
 
   // 이번 실행에서 추가되는 노드들의 예약 자리
-  'autoregressive-decoding': { x: 350, y: 505 },
-  'kv-cache': { x: 545, y: 480 },
-  'incremental-decoding': { x: 475, y: 630 },
-  'flash-attention': { x: 700, y: 600 },
+  'autoregressive-decoding': { x: 350, y: 390 },
+  'kv-cache': { x: 545, y: 375 },
+  'incremental-decoding': { x: 475, y: 465 },
+  'flash-attention': { x: 700, y: 455 },
 };
 
 const MIN_GAP = 120;
@@ -61,7 +61,8 @@ const NODE_BOUNDS = {
   // 라벨은 노드 오른쪽으로 펼쳐지므로 오른쪽 여백을 더 확보한다.
   maxX: GRAPH_VIEWBOX.width - 150,
   minY: 60,
-  maxY: GRAPH_VIEWBOX.height - 75,
+  // 아래쪽은 2행 MAP KEY 영역으로 비워 노드와 범례가 겹치지 않게 한다.
+  maxY: GRAPH_VIEWBOX.height - 170,
 };
 
 function clampToView(point: Point): Point {
@@ -166,8 +167,10 @@ export function layoutByChapter(
       .filter((node) => node.chapter_id === chapter.id)
       .sort((a, b) => (order.get(a.subtopic_id ?? '') ?? 99) - (order.get(b.subtopic_id ?? '') ?? 99));
 
-    const top = 96;
-    const bottom = GRAPH_VIEWBOX.height - 90;
+    // 상단 84px는 단원 제목 전용 영역이다. 노드와 라벨은 그 아래에서 시작한다.
+    const top = 112;
+    // MAP KEY가 놓이는 아래쪽 띠를 비워 둔다.
+    const bottom = GRAPH_VIEWBOX.height - 175;
     const step = mine.length > 1 ? (bottom - top) / (mine.length - 1) : 0;
     mine.forEach((node, row) => {
       // 짝수/홀수 행을 좌우로 조금 어긋내 라벨이 겹치지 않게 한다.
