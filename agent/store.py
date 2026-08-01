@@ -26,6 +26,7 @@ from contract.schema import (
     Weakpoint,
 )
 
+from agent import READ_ENCODING, WRITE_ENCODING
 from agent.config import GRAPH_PATH, REFERENCE_BOOK, SEED_GRAPH
 
 # ────────────────────────────────────────────────────────────────
@@ -65,12 +66,12 @@ class GraphStore:
     def _load(self) -> Graph:
         if not self.path.exists():
             self.reset()
-        return Graph.model_validate_json(self.path.read_text(encoding="utf-8"))
+        return Graph.model_validate_json(self.path.read_text(encoding=READ_ENCODING))
 
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text(
-            self.graph.model_dump_json(indent=2), encoding="utf-8"
+            self.graph.model_dump_json(indent=2), encoding=WRITE_ENCODING
         )
 
     def reset(self) -> None:
@@ -78,7 +79,7 @@ class GraphStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(SEED_GRAPH, self.path)
         self.graph = Graph.model_validate_json(
-            self.path.read_text(encoding="utf-8")
+            self.path.read_text(encoding=READ_ENCODING)
         )
 
     # ── 조회 ────────────────────────────────────────────────
@@ -185,8 +186,8 @@ class GraphStore:
 
 
 def load_conversation(path: Path) -> Conversation:
-    return Conversation.model_validate_json(path.read_text(encoding="utf-8"))
+    return Conversation.model_validate_json(path.read_text(encoding=READ_ENCODING))
 
 
 def load_reference_book(path: Path = REFERENCE_BOOK) -> ReferenceBook:
-    return ReferenceBook.model_validate(json.loads(path.read_text(encoding="utf-8")))
+    return ReferenceBook.model_validate(json.loads(path.read_text(encoding=READ_ENCODING)))

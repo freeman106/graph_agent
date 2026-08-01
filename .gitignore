@@ -30,3 +30,13 @@ __pycache__/
 
 # 에이전트 로컬 상태 (그래프 스냅샷 · 실행 기록)
 agent/state/
+
+# 비밀값 — 절대 커밋 금지
+.env
+.env.*
+!.env.example
+*.local
+
+# 개인 편집기 설정
+.vscode/settings.json
+.idea/

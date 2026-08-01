@@ -200,6 +200,15 @@ export interface Conversation {
   turns: Turn[];
 }
 
+/**
+ * lookup_reference 가 조회하는 로컬 용어 사전.
+ * 백엔드 전용이지만 두 스키마는 항상 같은 모양을 유지한다.
+ */
+export interface ReferenceBook {
+  source: string;
+  entries: Record<string, ReferenceEntry>;
+}
+
 /* ════════════════════════════════════════════════════════════════════
  *  표시용 상수 (프론트 전용 — 백엔드는 이걸 모른다)
  * ════════════════════════════════════════════════════════════════════ */

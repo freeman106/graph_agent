@@ -185,15 +185,18 @@ LimitPayload { steps_used, max_steps, unprocessed, unprocessed_tools[] }
 
 ## 확인용 실행
 
-```bash
-python3 -m venv .venv
-.venv/bin/pip install -r agent/requirements.txt
-export OPENAI_API_KEY=sk-...
-
-.venv/bin/python -m agent.main                    # 픽스처 대화로 실행
-.venv/bin/python -m agent.main --raw              # raw 이벤트까지 전부 출력
-.venv/bin/python -m agent.main --reset            # 그래프를 시드 상태로 되돌리고 실행
 ```
+npm install
+npm run setup
+
+npm run agent:offline          # API 키 없이 — 세 명은 이걸 쓴다
+npm run agent                  # 픽스처 대화로 실행 (키 필요)
+npm run agent -- --raw         # raw 이벤트까지 전부 출력
+npm run agent -- --reset       # 그래프를 시드 상태로 되돌리고 실행
+```
+
+Windows / macOS 모두 위 명령이 글자 그대로 동일하다. 파이썬을 직접 부르지 말 것 —
+경로가 OS 마다 다르고, 한국어 Windows 에서 필요한 UTF-8 강제가 빠진다.
 
 `agent/` 스켈레톤은 아직 `search_nodes` 와 `create_node` **두 개만** 물려 있다.
 나머지 툴은 B 가 `agent/tools.py` 에 채우고 `agent/main.py` 의 `TOOLS` 목록에 추가하면 된다.

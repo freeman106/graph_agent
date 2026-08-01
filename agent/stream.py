@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from agent import WRITE_ENCODING
 from contract.schema import StreamEvent, StreamKind
 
 # 콘솔 색 (터미널 느낌)
@@ -72,7 +73,7 @@ class StreamWriter:
         self._fh = None
         if jsonl_path is not None:
             jsonl_path.parent.mkdir(parents=True, exist_ok=True)
-            self._fh = jsonl_path.open("w", encoding="utf-8")
+            self._fh = jsonl_path.open("w", encoding=WRITE_ENCODING)
 
     def close(self) -> None:
         if self._fh is not None:

@@ -1,123 +1,133 @@
-# 지식그래프 학습 도우미 — 프론트엔드 프로토타입
+# 지식그래프 학습 도우미
 
-공부한 대화를 통째로 붙여넣으면, 에이전트가 다룬 개념을 뽑아 기존 지식그래프에 자동으로
-연결하고 어디서 막혔는지까지 짚어낸 강의노트를 만든다.
+공부한 대화를 통째로 붙여넣으면, 에이전트가 다룬 개념을 뽑아 기존 지식그래프에
+자동으로 연결하고 어디서 막혔는지까지 짚어낸 노트를 만든다.
 
-**백엔드 없음. 모든 데이터는 `src/mock.ts` 하드코딩이고, 실행은 타이머로 흐름만 흉내 낸다.**
+> **작업 규칙은 [AGENTS.md](AGENTS.md)에 있다. 코드를 건드리기 전에 먼저 읽는다.**
 
 ---
 
-## 시연하는 법
+## 클론 직후 할 일
 
-```bash
-npm install     # 처음 한 번만
-npm run dev     # → http://localhost:5173
+**Windows / macOS 모두 명령이 동일하다.** 아래 세 줄이 전부다.
+
+```
+npm install
+npm run setup
+npm run check
 ```
 
-노트북 화면(1440px 이상) 기준으로 만들었다. 브라우저 창은 최대화해두는 게 좋다.
+`npm run check`가 `환경 정상`을 찍으면 준비 완료다. 실패하면 무엇이 왜 틀렸는지와
+다음에 할 일이 같이 나온다. 그대로 따르고 다시 `npm run check`.
 
-### 1. 시작 상태를 먼저 보여준다 (10초)
+### 사전 준비 — Windows
 
-- 좌측에 이미 22개 노드가 채워진 트랜스포머 지식그래프가 있다
-- 우측 하단 **범례**: 초록(학습 완료) / 점선 흰색(미학습) / 주황(약점 있음) / 보라(이번 실행 추가)
-- `Positional Encoding`에 빨간 `!` 배지 — 이전 대화에서 이미 잡힌 약점
-- 우측 **"다음에 공부할 것"** 5개 — 따로 만든 로드맵이 아니라, 학습 완료 노드에 붙어 있는
-  미학습 노드를 그래프에서 그냥 뽑아낸 것
+1. **Node.js LTS** — [nodejs.org](https://nodejs.org) 에서 설치.
+   설치 후 **터미널을 새로 연다** (PATH 반영).
+2. **Python 3.11 ~ 3.13** — [python.org](https://www.python.org/downloads/windows/) 에서 설치.
+   설치 화면에서 **"Add python.exe to PATH" 를 반드시 체크한다.**
+   - ⚠️ **Microsoft Store 버전은 쓰지 않는다.** 가상환경 생성이 실패한다.
+     `python`을 쳤을 때 스토어가 열리면 그게 스토어 스텁이다.
+   - 터미널은 **PowerShell 또는 명령 프롬프트** 아무거나 좋다. Git Bash도 된다.
+3. **Git** — [git-scm.com](https://git-scm.com/download/win).
+   설치 중 줄바꿈 옵션은 무엇을 골라도 된다. `npm run setup`이 이 저장소에 맞게
+   다시 잡아준다.
 
-### 2. 대화를 붙여넣는다
+확인:
 
-`sample-conversation.md`를 열어 **전체 선택(⌘A) → 복사(⌘C)** 하고,
-좌측 하단 textarea를 클릭한 뒤 **⌘V**.
+```
+node -v
+py -3 --version
+```
 
-> 붙여넣는 순간 바로 실행된다. **실행 버튼이 없다** — 사람이 단계마다 승인하지 않는다는 게
-> 이 제품의 핵심이라 일부러 두지 않았다.
+### 사전 준비 — macOS
 
-파일 여는 게 번거로우면 textarea 우측의 `샘플 대화 붙여넣기 (데모용)` 링크를 눌러도 된다.
-실제 붙여넣기와 완전히 같은 경로를 탄다. (데모 편의용이라 실제 제품엔 없을 요소)
+1. **Node.js LTS** — `brew install node` 또는 [nodejs.org](https://nodejs.org)
+2. **Python 3.11 ~ 3.13** — `brew install python@3.13`
 
-### 3. 실행을 지켜본다 (약 45초)
+확인:
 
-우측 어두운 패널에 툴 호출이 위에서 아래로 쌓인다. 각 단계는 `[호출 중]` → `[결과]` →
-판단 근거 한 줄 순서다. **볼 곳 두 군데:**
+```
+node -v
+python3 --version
+```
 
-**① 3단계 `place_nodes` — 대표 장면 (약 15초)**
+---
 
-그래프에서 눈을 떼지 말 것. 새 노드가 하나씩 보라색으로 톡 튀어나오고, 기존 노드를 향해
-선이 그어지고, 그 선 위에 관계 라벨(`선행 개념` / `구성 요소` / `변형` / `대비`)이 붙는다.
+## 매일 쓰는 명령
 
-- `KV Cache` → Masked Attention, Self-Attention, Grouped-Query Attention
-- `Autoregressive Decoding` → Masked Attention, KV Cache, Greedy Decoding
-- `Incremental Decoding` → KV Cache ← **이 노드를 기억해둘 것**
-- `Flash Attention` → Self-Attention, KV Cache, Grouped-Query Attention
+| 명령 | 하는 일 |
+|---|---|
+| `npm run dev` | 프론트 개발 서버 → http://localhost:5173 |
+| `npm run agent:offline` | **API 키 없이** 에이전트 실행 |
+| `npm run agent` | 에이전트 실행 (API 키 필요, A 담당자만) |
+| `npm run check` | 환경 진단. 뭔가 이상하면 제일 먼저 |
+| `npm run contract:check` | 계약 검사만 빠르게 |
 
-이어서 4단계에서 `KV Cache`가 주황색으로 바뀌고 `!` 배지가 붙는다.
-대화에서 헤맨 흔적이 잡혔다는 뜻.
+`npm run dev`와 `npm run agent`는 실행 전에 계약 검사를 통과해야 한다.
+계약이 깨진 상태로는 작업을 시작할 수 없다.
 
-**② 6단계 `review_graph` — 에이전트가 자기 결과를 스스로 깐다**
+### API 키
 
-노란 경고 두 줄이 뜨고, 각각 그 직후에 그래프에 반영되는 게 보인다.
+키는 **A 담당자 한 명만** 가진다. 나머지 세 명은 키 없이 개발한다.
 
-1. `Incremental Decoding ≡ Autoregressive Decoding` → **노드가 사라지고** 남은 쪽이 번쩍인다
-2. `Flash Attention →[변형]→ Grouped-Query Attention 은 대화에 근거 없음` → **선이 사라진다**
+- 백엔드 → `npm run agent:offline`
+- 프론트 → `src/mock.ts` 목 데이터, 또는 `agent/state/last_run.jsonl`의 실제 이벤트 기록
 
-그래서 4개 배치했는데 최종 3개, 간선은 10개 → 8개다.
-좌측 상단 카운터(`25 nodes · 33 edges`)로 확인할 수 있다.
+키를 가진 사람은 `.env`에 넣는다 (`npm run setup`이 만들어 둔다):
 
-### 4. 노드를 클릭한다
+```
+OPENAI_API_KEY=sk-...
+```
 
-주황색 **KV Cache**를 클릭. 우측에 강의노트 패널이 열린다.
-
-- 개념 요약
-- **노란 박스 = 이 대화에서 막혔던 지점** — 이 제품의 차별점. "학습할 때도 캐시를 쓰면
-  더 이득 아닌가"에서 막혔고, 왜 막혔는지(전제를 놓침)까지 적혀 있다
-- 정정 전(빨강, 취소선) → 정정 후(초록)
-- `[[위키링크]]` — 클릭하면 그 노드로 이동한다
-- 근거: 이 내용이 나온 대화 원문 인용
-
-패널이 열리면 그래프는 해당 노드와 이웃만 남기고 흐려진다.
-`Autoregressive Decoding`(보라 테두리 = 이번 실행 추가), `Positional Encoding`(약점),
-`Beam Search`(미학습, 노트 없음)도 눌러보면 상태별 차이가 보인다.
-
-### 5. 다시 보여줄 때
-
-textarea 우측 `초기화` → 처음 상태로 돌아간다. 새로고침해도 된다.
-
-### 짚어줄 마지막 한 가지
-
-실행 후 우측 "다음에 공부할 것"에서 `Grouped-Query Attention`이 맨 위로 올라가고
-근거가 `Multi-Head Attention · KV Cache 다음`으로 늘어나 있다.
-**로드맵을 따로 만들어준 게 아니라 그래프가 자라니까 저절로 바뀐 것**이다.
+`.env`는 절대 커밋되지 않는다. `npm run check`가 추적 여부를 감시한다.
 
 ---
 
 ## 구조
 
 ```
-sample-conversation.md   붙여넣을 대화 (KV Cache 학습 대화). mock.ts가 ?raw 로 읽는다
-src/mock.ts              타입 + 모든 목 데이터. 실제 에이전트 응답으로 통째로 갈아끼울 지점
-src/App.tsx              6단계 실행 시퀀스 (전부 await sleep). 타이밍 조정은 여기
-src/components/
-  Graph.tsx              SVG 그래프. 좌표는 mock.ts에 하드코딩 (물리 시뮬레이션 없음)
-  StreamPanel.tsx        우측 어두운 실행 스트림
-  NodeDetail.tsx         노드 클릭 시 강의노트 패널
-  SideRail.tsx           "다음에 공부할 것" — 그래프에서 파생
-  Legend.tsx             그래프 위 범례
+contract/          팀 데이터 계약. 단일 진실 원본. 소유자 외 수정 금지
+  README.md          계약 A(그래프) / B(툴) / C(스트림) 설명
+  schema.py          pydantic 모델 — 원본
+  schema.ts          동일 타입의 TS 사본
+  .lock              계약 잠금 해시. 무단 변경을 자동으로 잡는다
+  fixtures/          시드 그래프 · 확인용 대화 · 용어 사전
+
+agent/             에이전트 코어 (A) + 그래프 엔진 (B) — Python
+src/               프론트 (C) — Vite + React + TypeScript
+scripts/           OS 차이를 흡수하는 실행 스크립트 (A)
 ```
 
-### 실제 에이전트를 붙일 때
+담당별로 읽을 계약은 `contract/README.md` 상단 표에 있다.
 
-`mock.ts`의 타입은 그대로 두고 데이터만 서버 응답으로 바꾸면 된다.
+---
 
-| 상수 | 대체할 것 |
-| --- | --- |
-| `INITIAL_NODES` / `INITIAL_EDGES` | 서버가 들고 있는 기존 지식그래프 |
-| `PLACEMENTS` | 3단계 결과 (신규 노드 + 간선 + 판단 근거) |
-| `REVIEW_FINDINGS` | 6단계 자기검수 지적과 그래프 반영 방식 |
-| `LECTURE_NOTES` | 5단계 강의노트 |
-| `TOOL_STEPS` | 각 툴의 호출 인자 / 결과 / 판단 근거 |
+## 시연
 
-간선 방향 규칙: **`source 는 target 의 {relation} 이다`**.
-안 정해두면 "선행 개념" 화살표가 매번 뒤집힌다.
+```
+npm run dev
+```
 
-노드 좌표(`x`, `y`)는 `GRAPH_VIEWBOX`(1060×760) 기준이고 하드코딩이다.
-프로토타입에선 레이아웃이 매번 흔들리지 않는 게 더 중요해서 물리 시뮬레이션을 쓰지 않았다.
+1. 시작 상태 — 22개 노드가 채워진 트랜스포머 지식그래프
+2. `contract/fixtures/kv_cache_conversation.json`의 대화를 textarea에 붙여넣기
+   (또는 우측 하단 `샘플 대화 붙여넣기` 링크)
+3. **3단계**에서 새 노드가 관계 라벨과 함께 그래프에 붙는 장면
+4. **6단계**에서 에이전트가 자기 결과의 문제를 스스로 잡아 그래프에 반영하는 장면
+5. 주황색 **KV Cache** 노드 클릭 → 막혔던 지점 / 정정 전·후 / 근거 인용
+
+---
+
+## 문제가 생기면
+
+**`npm run check`를 먼저 돌린다.** 대부분 원인과 조치가 같이 나온다.
+
+| 증상 | 원인 |
+|---|---|
+| `Python 을 찾지 못했습니다` | PATH 미반영 → 터미널 새로 열기. 또는 Microsoft Store 버전 |
+| `.venv 생성 실패` | Microsoft Store 파이썬. python.org 버전으로 재설치 |
+| `Python 패키지 ... ≠ ...` | `npm run setup` 다시 |
+| `한국어 인코딩 왕복` 실패 | 파이썬을 직접 불렀다. `npm run agent`를 쓴다 |
+| `계약 위반` | AGENTS.md 2절. 자기가 고쳤으면 `git checkout -- contract/` |
+| 리베이스에서 파일 전체가 변경으로 잡힘 | `npm run setup` 다시 (git 설정을 잡아준다) |
+| 한글이 `?????` 나 `占쏙옙`으로 보임 | 파일이 cp949/BOM으로 저장됐다. UTF-8(BOM 없음)로 다시 저장 |

@@ -1,0 +1,30 @@
+# 줄바꿈은 저장소 안에서 항상 LF. 체크아웃도 LF.
+# core.autocrlf 설정이 사람마다 달라도 리베이스에서 파일 전체가
+# 변경으로 잡히는 일이 없게 한다. (.gitattributes 가 autocrlf 를 이긴다)
+* text=auto eol=lf
+
+# 텍스트로 확실히 다뤄야 하는 것들 — 한국어가 들어간다
+*.md      text eol=lf
+*.json    text eol=lf
+*.ts      text eol=lf
+*.tsx     text eol=lf
+*.mjs     text eol=lf
+*.js      text eol=lf
+*.py      text eol=lf
+*.css     text eol=lf
+*.html    text eol=lf
+*.txt     text eol=lf
+.env.example text eol=lf
+
+# 바이너리 — 줄바꿈 변환 금지
+*.png     binary
+*.jpg     binary
+*.jpeg    binary
+*.gif     binary
+*.webp    binary
+*.ico     binary
+*.woff    binary
+*.woff2   binary
+
+# 잠금 파일은 diff 노이즈를 줄인다
+package-lock.json  -diff linguist-generated

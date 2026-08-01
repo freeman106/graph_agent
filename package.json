@@ -4,10 +4,18 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "check": "node scripts/check.mjs",
+    "predev": "node scripts/contract-check.mjs --quiet",
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "agent": "node scripts/agent.mjs",
+    "agent:offline": "node scripts/agent.mjs --offline",
+    "agent:reset": "node scripts/agent.mjs --reset --offline",
+    "contract:check": "node scripts/contract-check.mjs",
+    "contract:seal": "node scripts/contract-seal.mjs",
+    "lint": "oxlint"
   },
   "dependencies": {
     "react": "^19.2.8",
@@ -23,5 +31,8 @@
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.2",
     "vite": "^8.2.0"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }
