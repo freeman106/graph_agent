@@ -8,7 +8,14 @@
  * 이 세 가지를 여기서 처리하고, 밖에서는 한 줄만 보이게 한다.
  */
 
-import { c, loadDotEnv, pythonEnv, run, venvExists, venvPython } from './lib.mjs';
+import { c, pythonEnv, run, venvExists, venvPython } from './lib.mjs';
+
+// 계약이 깨진 상태로는 에이전트를 돌리지 않는다.
+// npm 의 pre 스크립트는 agent / agent:offline / agent:reset 마다 따로 걸어야 해서
+// 빠뜨리기 쉽다. 여기서 한 번만 막는 편이 확실하다.
+if (run(process.execPath, ['scripts/contract-check.mjs', '--quiet']) !== 0) {
+  process.exit(1);
+}
 
 if (!venvExists()) {
   console.error(`${c.red('✗')} .venv 가 없습니다. 먼저 ${c.cyan('npm run setup')} 을 실행하세요.`);

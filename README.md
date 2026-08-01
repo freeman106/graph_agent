@@ -122,7 +122,7 @@ npm run dev
 
 **`npm run check`를 먼저 돌린다.** 대부분 원인과 조치가 같이 나온다.
 
-| 증상 | 원인 |
+| 증상 | 원인과 조치 |
 |---|---|
 | `Python 을 찾지 못했습니다` | PATH 미반영 → 터미널 새로 열기. 또는 Microsoft Store 버전 |
 | `.venv 생성 실패` | Microsoft Store 파이썬. python.org 버전으로 재설치 |
@@ -130,4 +130,14 @@ npm run dev
 | `한국어 인코딩 왕복` 실패 | 파이썬을 직접 불렀다. `npm run agent`를 쓴다 |
 | `계약 위반` | AGENTS.md 2절. 자기가 고쳤으면 `git checkout -- contract/` |
 | 리베이스에서 파일 전체가 변경으로 잡힘 | `npm run setup` 다시 (git 설정을 잡아준다) |
-| 한글이 `?????` 나 `占쏙옙`으로 보임 | 파일이 cp949/BOM으로 저장됐다. UTF-8(BOM 없음)로 다시 저장 |
+| 파일 안의 한글이 `占쏙옙`으로 보임 | 그 파일이 cp949/BOM으로 저장됐다. UTF-8(BOM 없음)로 다시 저장 |
+
+### Windows 전용
+
+| 증상 | 원인과 조치 |
+|---|---|
+| PowerShell에서 `npm : 이 시스템에서 스크립트를 실행할 수 없으므로` | 실행 정책 차단. **명령 프롬프트(cmd)를 쓰거나** `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` |
+| 콘솔 출력의 한글만 깨져 보임 (파일은 멀쩡) | 콘솔 코드페이지가 949. **Windows Terminal**을 쓰거나 `chcp 65001` 먼저 실행. `npm run check`가 감지해서 알려준다 |
+| `py` 를 찾을 수 없음 | Python 설치 시 py 런처를 뺐다. `python` 으로도 동작하니 `npm run setup` 을 그냥 돌려본다 |
+| venv 생성이나 pip 설치가 이상하게 실패 | 클론 경로에 한글/공백이 있을 수 있다. `C:\dev\graph_agent` 같은 영문 경로로 다시 클론. `npm run check`가 경고한다 |
+| 설치가 비정상적으로 느림 | 백신 실시간 검사. 저장소 폴더를 예외로 등록하면 빨라진다 |

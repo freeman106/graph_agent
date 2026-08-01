@@ -12,6 +12,8 @@
 from __future__ import annotations
 
 import json
+import os
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -19,17 +21,26 @@ from typing import Any
 from agent import WRITE_ENCODING
 from contract.schema import StreamEvent, StreamKind
 
-# 콘솔 색 (터미널 느낌)
+# 콘솔 색 (터미널 느낌).
+# 구형 Windows 콘솔은 ANSI 이스케이프를 해석하지 못해 ←[32m 이 그대로 찍힌다.
+# 파이프로 넘길 때도 색 코드가 섞이면 안 되므로 TTY 일 때만 켠다.
+_USE_COLOR = sys.stdout.isatty() and not os.environ.get("NO_COLOR")
+
+
+def _paint(code: str) -> str:
+    return code if _USE_COLOR else ""
+
+
 _C = {
-    "tool_call": "\033[36m",  # cyan
-    "tool_result": "\033[32m",  # green
-    "decision": "\033[33m",  # yellow
-    "note": "\033[90m",  # grey
-    "error": "\033[31m",  # red
-    "limit": "\033[35m",  # magenta
-    "raw": "\033[90m",
+    "tool_call": _paint("\033[36m"),  # cyan
+    "tool_result": _paint("\033[32m"),  # green
+    "decision": _paint("\033[33m"),  # yellow
+    "note": _paint("\033[90m"),  # grey
+    "error": _paint("\033[31m"),  # red
+    "limit": _paint("\033[35m"),  # magenta
+    "raw": _paint("\033[90m"),
 }
-_RESET = "\033[0m"
+_RESET = _paint("\033[0m")
 
 _MARK = {
     "tool_call": "▸",

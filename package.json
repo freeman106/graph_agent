@@ -8,7 +8,7 @@
     "check": "node scripts/check.mjs",
     "predev": "node scripts/contract-check.mjs --quiet",
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "node scripts/build.mjs",
     "preview": "vite preview",
     "agent": "node scripts/agent.mjs",
     "agent:offline": "node scripts/agent.mjs --offline",

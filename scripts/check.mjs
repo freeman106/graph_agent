@@ -9,6 +9,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import {
+  IS_WINDOWS,
   NODE_MIN,
   PYTHON_MAX,
   PYTHON_MIN,
@@ -25,6 +26,33 @@ const results = [];
 const ok = (name, detail = '') => results.push({ level: 'ok', name, detail });
 const warn = (name, detail = '') => results.push({ level: 'warn', name, detail });
 const bad = (name, detail = '', fix = '') => results.push({ level: 'bad', name, detail, fix });
+
+/* ── Windows 전용 함정 ───────────────────────────────────── */
+if (IS_WINDOWS) {
+  // 콘솔 코드페이지. 949(한국어 기본)면 파이썬이 UTF-8 로 내보낸 한국어가
+  // 화면에서 깨져 보인다. 데이터는 멀쩡하지만 디버깅할 때 사람을 헷갈리게 한다.
+  const chcp = capture('cmd', ['/c', 'chcp']);
+  const page = (chcp.stdout.match(/(\d{3,5})\s*$/m) ?? [])[1];
+  if (page && page !== '65001') {
+    warn(
+      '콘솔 코드페이지',
+      `${page} — 한국어가 깨져 보일 수 있습니다. Windows Terminal 을 쓰거나 chcp 65001 을 먼저 실행하세요`,
+    );
+  } else {
+    ok('콘솔 코드페이지', page ?? 'unknown');
+  }
+}
+
+// 경로에 한글이나 공백이 있으면 파이썬 venv / pip 가 드물게 실패한다.
+// macOS 에서는 재현되지 않으므로 여기서 미리 알린다.
+if (/[^\x20-\x7e]/.test(ROOT)) {
+  warn(
+    '저장소 경로',
+    `비ASCII 문자 포함 — ${ROOT}. 문제가 생기면 영문 경로(예: C:\\dev\\graph_agent)로 다시 클론하세요`,
+  );
+} else {
+  ok('저장소 경로', ROOT);
+}
 
 /* ── Node ────────────────────────────────────────────────── */
 const nodeMajor = Number(process.versions.node.split('.')[0]);
