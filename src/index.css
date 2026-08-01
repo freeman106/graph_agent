@@ -1,186 +1,148 @@
 @import 'tailwindcss';
 
 :root {
-  font-family:
-    'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Apple SD Gothic Neo', system-ui,
-    sans-serif;
+  font-family: 'Pretendard', 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   color-scheme: light;
+  font-synthesis: none;
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
-  background: #f1f5f9;
   overflow: hidden;
+  background: #f3f0e8;
+}
+
+button,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.app-shell {
+  background: #f3f0e8;
 }
 
 .font-mono-term {
-  font-family: 'SF Mono', 'JetBrains Mono', 'Menlo', 'Consolas', ui-monospace, monospace;
+  font-family: 'SF Mono', 'JetBrains Mono', 'Cascadia Mono', 'Consolas', ui-monospace, monospace;
 }
 
-/* ── 그래프 연출 ─────────────────────────────────────────── */
+.map-districts text {
+  font-family: 'SF Mono', 'JetBrains Mono', 'Consolas', ui-monospace, monospace;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  fill: #8c877d;
+}
 
-/* 새 노드가 톡 하고 등장 */
 @keyframes node-pop {
-  0% {
-    transform: scale(0);
-    opacity: 0;
-  }
-  55% {
-    transform: scale(1.22);
-    opacity: 1;
-  }
-  100% {
-    transform: scale(1);
-    opacity: 1;
-  }
+  0% { transform: scale(0); opacity: 0; }
+  70% { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
 }
+
 .node-pop {
-  animation: node-pop 460ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation: node-pop 360ms cubic-bezier(0.25, 0.8, 0.25, 1) both;
 }
 
-/* 새 노드 주변으로 퍼지는 링 */
 @keyframes ring-pulse {
-  0% {
-    r: 22;
-    opacity: 0.55;
-  }
-  100% {
-    r: 46;
-    opacity: 0;
-  }
-}
-.ring-pulse {
-  animation: ring-pulse 1.6s ease-out infinite;
+  0% { r: 16; opacity: 0.8; }
+  100% { r: 38; opacity: 0; }
 }
 
-/* 선이 기존 노드 쪽으로 그어진다 */
-@keyframes edge-draw {
-  from {
-    stroke-dashoffset: var(--len);
-  }
-  to {
-    stroke-dashoffset: 0;
-  }
+.ring-pulse {
+  animation: ring-pulse 1.5s ease-out infinite;
 }
+
+@keyframes edge-draw {
+  from { stroke-dashoffset: var(--len); }
+  to { stroke-dashoffset: 0; }
+}
+
 .edge-draw {
   stroke-dasharray: var(--len);
-  animation: edge-draw 520ms ease-out both;
+  animation: edge-draw 480ms ease-out both;
 }
 
-/* 관계 라벨은 선이 다 그어진 뒤 뜬다 */
 @keyframes label-in {
-  from {
-    opacity: 0;
-    transform: translateY(5px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-.label-in {
-  animation: label-in 320ms ease-out 380ms both;
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-/* 검수 반영: 사라지는 것 */
+.label-in {
+  animation: label-in 220ms ease-out 300ms both;
+}
+
 .fading {
   opacity: 0;
-  transition: opacity 420ms ease;
+  transition: opacity 380ms ease;
 }
 
-/* 검수 반영: 병합 대상이 잠깐 번쩍 */
 @keyframes flash-ring {
-  0%,
-  100% {
-    opacity: 0;
-    r: 24;
-  }
-  40% {
-    opacity: 0.9;
-    r: 34;
-  }
+  0%, 100% { opacity: 0; r: 18; }
+  45% { opacity: 1; r: 30; }
 }
+
 .flash-ring {
-  animation: flash-ring 900ms ease-out 2;
+  animation: flash-ring 760ms ease-out 2;
 }
-
-@keyframes goal-orbit-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-.goal-orbit {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: goal-orbit-spin 14s linear infinite;
-}
-
-.atlas-regions rect,
-.atlas-regions path {
-  transition: fill 240ms ease, stroke 240ms ease;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .goal-orbit,
-  .ring-pulse,
-  .flash-ring,
-  .node-pop,
-  .edge-draw,
-  .label-in,
-  .line-in,
-  .caret {
-    animation: none !important;
-  }
-}
-
-/* ── 스트림 ─────────────────────────────────────────── */
 
 @keyframes line-in {
-  from {
-    opacity: 0;
-    transform: translateY(-3px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(-2px); }
+  to { opacity: 1; transform: translateY(0); }
 }
+
 .line-in {
-  animation: line-in 180ms ease-out both;
+  animation: line-in 140ms ease-out both;
 }
 
 @keyframes blink {
-  0%,
-  49% {
-    opacity: 1;
-  }
-  50%,
-  100% {
-    opacity: 0;
-  }
+  0%, 45% { opacity: 1; }
+  46%, 100% { opacity: 0; }
 }
+
 .caret {
   animation: blink 900ms step-end infinite;
 }
 
-.stream-scroll::-webkit-scrollbar {
-  width: 6px;
+.stream-scroll::-webkit-scrollbar,
+.light-scroll::-webkit-scrollbar {
+  width: 7px;
 }
-.stream-scroll::-webkit-scrollbar-thumb {
-  background: #27313f;
-  border-radius: 3px;
-}
+
 .stream-scroll::-webkit-scrollbar-track {
+  background: #171a1b;
+}
+
+.stream-scroll::-webkit-scrollbar-thumb {
+  background: #3b3f40;
+  border: 2px solid #171a1b;
+}
+
+.light-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.light-scroll::-webkit-scrollbar {
-  width: 6px;
-}
 .light-scroll::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 3px;
+  background: #bdb8ad;
+  border: 2px solid #f4f0e7;
 }
-.light-scroll::-webkit-scrollbar-track {
-  background: transparent;
+
+@media (prefers-reduced-motion: reduce) {
+  .node-pop,
+  .ring-pulse,
+  .edge-draw,
+  .label-in,
+  .flash-ring,
+  .line-in,
+  .caret {
+    animation: none !important;
+  }
 }
