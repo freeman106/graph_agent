@@ -56,6 +56,26 @@ export const NODE_LAYOUT: Record<string, Point> = {
 };
 
 const MIN_GAP = 120;
+const NODE_BOUNDS = {
+  minX: 60,
+  // 라벨은 노드 오른쪽으로 펼쳐지므로 오른쪽 여백을 더 확보한다.
+  maxX: GRAPH_VIEWBOX.width - 150,
+  minY: 60,
+  maxY: GRAPH_VIEWBOX.height - 75,
+};
+
+function clampToView(point: Point): Point {
+  return {
+    x: Math.max(NODE_BOUNDS.minX, Math.min(NODE_BOUNDS.maxX, point.x)),
+    y: Math.max(NODE_BOUNDS.minY, Math.min(NODE_BOUNDS.maxY, point.y)),
+  };
+}
+
+function distanceToClosest(point: Point, taken: Point[]): number {
+  return taken.length === 0
+    ? Number.POSITIVE_INFINITY
+    : Math.min(...taken.map((other) => Math.hypot(other.x - point.x, other.y - point.y)));
+}
 
 /**
  * 좌표가 없는 노드의 자리를 잡는다.
@@ -82,33 +102,33 @@ export function placeNewNode(
         }
       : center;
 
-  // 앵커 무게중심에서 그래프 바깥쪽으로 한 칸 민다.
-  const away = Math.hypot(base.x - center.x, base.y - center.y) || 1;
-  let candidate = {
-    x: base.x + ((base.x - center.x) / away) * MIN_GAP,
-    y: base.y + ((base.y - center.y) / away) * MIN_GAP,
-  };
-
+  // 앵커 무게중심에서 그래프 바깥쪽을 우선하되, 모든 후보는 화면 안으로 제한한다.
   const taken = Object.values(occupied);
-  for (let ring = 0; ring < 12; ring++) {
-    const collides = taken.some(
-      (p) => Math.hypot(p.x - candidate.x, p.y - candidate.y) < MIN_GAP,
-    );
-    const inside =
-      candidate.x > 60 &&
-      candidate.x < GRAPH_VIEWBOX.width - 90 &&
-      candidate.y > 60 &&
-      candidate.y < GRAPH_VIEWBOX.height - 70;
-    if (!collides && inside) break;
+  const preferredAngle = Math.atan2(base.y - center.y, base.x - center.x);
+  const candidates: Point[] = [];
 
-    const angle = (ring * 2 * Math.PI) / 6;
-    candidate = {
-      x: base.x + Math.cos(angle) * (MIN_GAP + ring * 12),
-      y: base.y + Math.sin(angle) * (MIN_GAP + ring * 12),
-    };
+  // 가까운 링부터 탐색한다. 마지막 후보를 무조건 반환하지 않도록 후보 전체를
+  // 검사하고, 충돌하지 않는 첫 좌표만 채택한다.
+  for (let ring = 0; ring < 6; ring++) {
+    const radius = MIN_GAP + ring * 54;
+    for (let step = 0; step < 12; step++) {
+      const angle = preferredAngle + (step * 2 * Math.PI) / 12;
+      const candidate = clampToView({
+        x: base.x + Math.cos(angle) * radius,
+        y: base.y + Math.sin(angle) * radius,
+      });
+      candidates.push(candidate);
+      if (distanceToClosest(candidate, taken) >= MIN_GAP) return candidate;
+    }
   }
 
-  return candidate;
+  // 노드가 매우 많아 최소 간격을 만족할 수 없으면, 화면 안 후보 중 기존
+  // 노드와 가장 멀리 떨어진 곳을 쓴다. 화면 밖 좌표는 절대 반환하지 않는다.
+  return candidates.reduce((best, candidate) =>
+    distanceToClosest(candidate, taken) > distanceToClosest(best, taken)
+      ? candidate
+      : best,
+  clampToView(center));
 }
 
 

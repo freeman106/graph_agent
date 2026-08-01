@@ -8,7 +8,7 @@
  *
  *   대단원(major)   ← Chapter
  *   섹션(section)   ← Subtopic
- *   문단(paragraph) ← Node.document 를 줄 단위로 나눈 것
+ *   문단(paragraph) ← Node.document 하나. 원문의 줄바꿈은 내부에서 유지한다
  *   삽입(insertion) ← origin 이 conversation 인 노드 (접힌 채로 끼어든다)
  */
 
@@ -40,11 +40,7 @@ export interface NoteBundle {
   comments: RuntimeNoteComment[];
 }
 
-const paragraphsOf = (document: string) =>
-  document
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean);
+const documentBody = (document: string) => document.replace(/\r\n?/g, '\n').trim();
 
 export function buildNoteBundle(
   chapters: Chapter[],
@@ -67,21 +63,15 @@ export function buildNoteBundle(
       const paragraphs: NoteBundle['sections'][number]['paragraphs'] = [];
 
       for (const node of fromLecture) {
-        const bodies = paragraphsOf(node.document);
-        bodies.forEach((body, index) => {
-          const id = `${node.id}-p${index + 1}`;
-          paragraphs.push({ id, nodeId: node.id, body });
-          noteContent[id] = body;
-          if (index === 0) anchorOf[node.id] = id;
-        });
+        const body = documentBody(node.document) || node.summary;
+        const id = `${node.id}-p1`;
+        paragraphs.push({ id, nodeId: node.id, body });
+        noteContent[id] = body;
+        anchorOf[node.id] = id;
         node.comments.forEach((comment, index) => {
-          // 인용문이 들어 있는 문단을 앵커로 삼는다. 없으면 첫 문단.
-          const at = comment.quote
-            ? bodies.findIndex((body) => body.includes(comment.quote as string))
-            : -1;
           comments.push({
             id: `${node.id}-c${index + 1}`,
-            anchorId: `${node.id}-p${(at >= 0 ? at : 0) + 1}`,
+            anchorId: id,
             quote: comment.quote,
             nodeId: node.id,
             title: comment.weakpoint ? '막힌 지점' : '코멘트',
@@ -108,7 +98,7 @@ export function buildNoteBundle(
 
       // 대화로 생긴 노드는 같은 소주제 뒤에 접힌 블록으로 끼어든다.
       for (const node of inSubtopic.filter((candidate) => candidate.origin === 'conversation')) {
-        const body = paragraphsOf(node.document);
+        const body = documentBody(node.document) || node.summary;
         insertions.push({
           id: `insert-${node.id}`,
           afterSectionId: subtopic.id,
@@ -117,12 +107,9 @@ export function buildNoteBundle(
           title: node.name,
           preview: node.summary,
           tags: node.comments.some((comment) => comment.weakpoint) ? ['막힌 지점'] : [],
-          paragraphs: body.length > 0 ? body : [node.summary],
+          paragraphs: [body],
         });
-        body.forEach((text, index) => {
-          const id = index === 0 ? `insert-${node.id}` : `insert-${node.id}-${index + 1}`;
-          noteContent[id] = text;
-        });
+        noteContent[`insert-${node.id}`] = body;
         anchorOf[node.id] = `insert-${node.id}`;
       }
     }

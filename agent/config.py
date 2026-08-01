@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
+import shutil
 from pathlib import Path
 
 # ── 모델 ──────────────────────────────────────────────────────────
@@ -41,6 +43,37 @@ SEED_GRAPH = FIXTURES / "seed_graph.json"
 REFERENCE_BOOK = FIXTURES / "reference.json"
 DEFAULT_CONVERSATION = FIXTURES / "kv_cache_conversation.json"
 
-STATE_DIR = ROOT / "agent" / "state"
+def _local_state_dir() -> Path:
+    override = os.getenv("KG_STATE_DIR")
+    if override:
+        return Path(override).expanduser().resolve()
+    if os.name == "nt":
+        base = Path(os.getenv("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+        app_dir = base / "graph-agent"
+    elif os.uname().sysname == "Darwin":
+        app_dir = Path.home() / "Library" / "Application Support" / "graph-agent"
+    else:
+        app_dir = Path(
+            os.getenv("XDG_STATE_HOME", Path.home() / ".local" / "state")
+        ) / "graph-agent"
+    project_key = hashlib.sha256(str(ROOT.resolve()).encode("utf-8")).hexdigest()[:16]
+    return app_dir / project_key
+
+
+# 실행 중 계속 바뀌는 파일은 프로젝트가 OneDrive 안에 있어도 로컬 디스크에 둔다.
+# KG_STATE_DIR 로 별도 경로를 지정할 수 있다.
+STATE_DIR = _local_state_dir()
+STATE_DIR.mkdir(parents=True, exist_ok=True)
+
+# 기존 실행 결과는 최초 한 번 보존해서 사용자가 만든 그래프를 잃지 않는다.
+_LEGACY_STATE_DIRS = (STATE_DIR.parent, ROOT / "agent" / "state")
+for _state_name in ("graph.json", "last_run.jsonl"):
+    _local = STATE_DIR / _state_name
+    for _legacy_dir in _LEGACY_STATE_DIRS:
+        _legacy = _legacy_dir / _state_name
+        if not _local.exists() and _legacy.exists():
+            shutil.copy2(_legacy, _local)
+            break
+
 GRAPH_PATH = STATE_DIR / "graph.json"
 LAST_RUN_PATH = STATE_DIR / "last_run.jsonl"

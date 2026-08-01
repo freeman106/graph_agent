@@ -6,6 +6,8 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 // @ts-expect-error — scripts/ 는 타입 없는 순수 노드 스크립트다
 import { agentApi } from './scripts/agent-api.mjs'
+// @ts-expect-error — scripts/ 는 타입 없는 순수 노드 스크립트다
+import { stateDir, stateFile } from './scripts/lib.mjs'
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url))
 
@@ -20,7 +22,7 @@ const ROOT = path.dirname(fileURLToPath(import.meta.url))
  * 실제 실행 결과가 없으면(=아직 npm run agent 를 안 돌렸으면) 조용히 시드를 쓴다.
  */
 function liveGraph(): Plugin {
-  const live = path.join(ROOT, 'agent', 'state', 'graph.json')
+  const live = stateFile('graph.json')
   return {
     name: 'kg-live-graph',
     enforce: 'pre',
@@ -35,6 +37,5 @@ function liveGraph(): Plugin {
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [agentApi(), liveGraph(), react(), tailwindcss()],
-  // 저장소 밖이 아닌 agent/state 를 읽어야 하므로 허용 범위에 넣는다.
-  server: { fs: { allow: [ROOT] } },
+  server: { fs: { allow: [ROOT, stateDir()] } },
 })

@@ -10,7 +10,8 @@
 
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -21,6 +22,37 @@ export const IS_WINDOWS = process.platform === 'win32';
 export const PYTHON_MIN = [3, 11];
 export const PYTHON_MAX = [3, 14];
 export const NODE_MIN = 20;
+
+/** OneDrive와 무관한 실행 상태 디렉터리. Python agent/config.py와 동일한 규칙이다. */
+export function stateDir(env = process.env) {
+  if (env.KG_STATE_DIR) return path.resolve(env.KG_STATE_DIR);
+  let appDir;
+  if (IS_WINDOWS) {
+    appDir = path.join(env.LOCALAPPDATA ?? path.join(homedir(), 'AppData', 'Local'), 'graph-agent');
+  } else if (process.platform === 'darwin') {
+    appDir = path.join(homedir(), 'Library', 'Application Support', 'graph-agent');
+  } else {
+    appDir = path.join(env.XDG_STATE_HOME ?? path.join(homedir(), '.local', 'state'), 'graph-agent');
+  }
+  const projectKey = createHash('sha256').update(ROOT, 'utf8').digest('hex').slice(0, 16);
+  return path.join(appDir, projectKey);
+}
+
+/** 상태 파일 경로를 돌려주고, 예전 OneDrive 위치의 파일은 최초 한 번 이전한다. */
+export function stateFile(name, env = process.env) {
+  const dir = stateDir(env);
+  const target = path.join(dir, name);
+  if (existsSync(target)) return target;
+
+  mkdirSync(dir, { recursive: true });
+  const legacyFiles = [
+    path.join(path.dirname(dir), name),
+    path.join(ROOT, 'agent', 'state', name),
+  ];
+  const legacy = legacyFiles.find((candidate) => existsSync(candidate));
+  if (legacy) copyFileSync(legacy, target);
+  return target;
+}
 
 /* ── 출력 ───────────────────────────────────────────────── */
 

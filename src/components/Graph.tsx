@@ -5,8 +5,41 @@ import { wrapLabel, type RuntimeEdge, type RuntimeNode } from '../view';
 
 const NODE_RADIUS = 15;
 const FULL_VIEW = { x: 0, y: 0, width: GRAPH_VIEWBOX.width, height: GRAPH_VIEWBOX.height };
+const VIEW_ASPECT = GRAPH_VIEWBOX.width / GRAPH_VIEWBOX.height;
+const MIN_ZOOM_WIDTH = 280;
 const SUPPLEMENT_COLOR = '#a65f2b';
 const SUPPLEMENT_DARK = '#6f3518';
+
+type ViewBox = typeof FULL_VIEW;
+
+function constrainViewBox(candidate: ViewBox): ViewBox {
+  const width = Math.max(MIN_ZOOM_WIDTH, Math.min(GRAPH_VIEWBOX.width, candidate.width));
+  const height = width / VIEW_ASPECT;
+  return {
+    x: Math.max(0, Math.min(GRAPH_VIEWBOX.width - width, candidate.x)),
+    y: Math.max(0, Math.min(GRAPH_VIEWBOX.height - height, candidate.y)),
+    width,
+    height,
+  };
+}
+
+/** 선택 노드와 직접 연결된 이웃의 노드·라벨이 함께 보이는 확대 범위. */
+function fitNeighborhood(nodes: RuntimeNode[], compact: boolean): ViewBox {
+  const minX = Math.min(...nodes.map((node) => node.x)) - 55;
+  const maxX = Math.max(...nodes.map((node) => node.x)) + 150;
+  const minY = Math.min(...nodes.map((node) => node.y)) - 55;
+  const maxY = Math.max(...nodes.map((node) => node.y)) + 80;
+  const contentWidth = maxX - minX;
+  const contentHeight = maxY - minY;
+  const width = Math.max(compact ? 390 : 440, contentWidth, contentHeight * VIEW_ASPECT);
+  const height = width / VIEW_ASPECT;
+  return constrainViewBox({
+    x: (minX + maxX - width) / 2,
+    y: (minY + maxY - height) / 2,
+    width,
+    height,
+  });
+}
 
 interface Props {
   nodes: RuntimeNode[];
@@ -45,23 +78,24 @@ const edgeDash = (relation: RuntimeEdge['relation']) => {
 export default function Graph({ nodes, edges, selectedId, noteIds, filter, compact = false, columns = [], onSelect }: Props) {
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [viewBox, setViewBox] = useState(FULL_VIEW);
+  const viewBoxRef = useRef<ViewBox>(FULL_VIEW);
   const animationFrame = useRef<number | null>(null);
   const byId = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
   const focusId = hoverId ?? selectedId;
 
   useEffect(() => {
     const selected = selectedId ? byId.get(selectedId) : null;
-    const selectedWidth = compact ? 360 : 520;
-    const selectedHeight = compact ? 205 : 380;
-    const target = selected
-      ? {
-          x: Math.max(0, Math.min(GRAPH_VIEWBOX.width - selectedWidth, selected.x - selectedWidth * 0.5)),
-          y: Math.max(0, Math.min(GRAPH_VIEWBOX.height - selectedHeight, selected.y - selectedHeight * 0.48)),
-          width: selectedWidth,
-          height: selectedHeight,
-        }
-      : FULL_VIEW;
-    const start = { ...viewBox };
+    const neighborhood = selected
+      ? [
+          selected,
+          ...edges
+            .filter((edge) => edge.from_id === selected.id || edge.to_id === selected.id)
+            .map((edge) => byId.get(edge.from_id === selected.id ? edge.to_id : edge.from_id))
+            .filter((node): node is RuntimeNode => Boolean(node)),
+        ]
+      : [];
+    const target = selected ? fitNeighborhood(neighborhood, compact) : FULL_VIEW;
+    const start = { ...viewBoxRef.current };
     const startedAt = performance.now();
     const duration = selected ? 720 : 560;
 
@@ -69,21 +103,51 @@ export default function Graph({ nodes, edges, selectedId, noteIds, filter, compa
     const animate = (now: number) => {
       const progress = Math.min(1, (now - startedAt) / duration);
       const eased = 1 - Math.pow(1 - progress, 3);
-      setViewBox({
+      const next = {
         x: start.x + (target.x - start.x) * eased,
         y: start.y + (target.y - start.y) * eased,
         width: start.width + (target.width - start.width) * eased,
         height: start.height + (target.height - start.height) * eased,
-      });
+      };
+      viewBoxRef.current = next;
+      setViewBox(next);
       if (progress < 1) animationFrame.current = requestAnimationFrame(animate);
     };
     animationFrame.current = requestAnimationFrame(animate);
     return () => {
       if (animationFrame.current !== null) cancelAnimationFrame(animationFrame.current);
     };
-  // viewBox is intentionally captured at the start of each selection transition.
+  // 선택이 바뀌는 순간의 그래프 구조로 확대 범위를 잡는다. 상태/애니메이션 변경이
+  // 사용자가 휠로 맞춘 줌을 되돌리지 않도록 byId와 edges는 의존성에서 제외한다.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, byId, compact]);
+  }, [selectedId, compact]);
+
+  const handleWheel = (event: React.WheelEvent<SVGSVGElement>) => {
+    event.preventDefault();
+    if (animationFrame.current !== null) cancelAnimationFrame(animationFrame.current);
+
+    const current = viewBoxRef.current;
+    const svg = event.currentTarget;
+    const point = svg.createSVGPoint();
+    point.x = event.clientX;
+    point.y = event.clientY;
+    const matrix = svg.getScreenCTM();
+    const cursor = matrix
+      ? point.matrixTransform(matrix.inverse())
+      : { x: current.x + current.width / 2, y: current.y + current.height / 2 };
+    const normalizedDelta = Math.max(-100, Math.min(100, event.deltaY));
+    const factor = Math.exp(normalizedDelta * 0.0018);
+    const nextWidth = Math.max(MIN_ZOOM_WIDTH, Math.min(GRAPH_VIEWBOX.width, current.width * factor));
+    const scale = nextWidth / current.width;
+    const next = constrainViewBox({
+      x: cursor.x - (cursor.x - current.x) * scale,
+      y: cursor.y - (cursor.y - current.y) * scale,
+      width: nextWidth,
+      height: nextWidth / VIEW_ASPECT,
+    });
+    viewBoxRef.current = next;
+    setViewBox(next);
+  };
 
   const focusedEdges = useMemo(
     () => new Set(edges.filter((edge) => edge.from_id === focusId || edge.to_id === focusId).map((edge) => edge.id)),
@@ -134,6 +198,8 @@ export default function Graph({ nodes, edges, selectedId, noteIds, filter, compa
       viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
       className="h-full w-full bg-[#f7f5ef]"
       onClick={() => onSelect(null)}
+      onWheel={handleWheel}
+      style={{ touchAction: 'none' }}
     >
       <defs>
         <pattern id="paper-grid" width="28" height="28" patternUnits="userSpaceOnUse">
@@ -218,6 +284,7 @@ export default function Graph({ nodes, edges, selectedId, noteIds, filter, compa
           const isFocus = focusId === node.id;
           const isNeighbor = neighborIds.has(node.id);
           const frontier = frontierIds.has(node.id);
+          const isSupplement = Boolean(node.isNew && node.origin === 'conversation');
           const filtered = filter === 'weak'
             ? weakContext.has(node.id)
             : filter === 'frontier'
@@ -250,13 +317,12 @@ export default function Graph({ nodes, edges, selectedId, noteIds, filter, compa
               <g className={node.justAdded ? 'node-pop' : undefined}>
                 {node.justAdded && <circle r="18" fill="none" stroke={SUPPLEMENT_COLOR} strokeWidth="1.5" className="ring-pulse" />}
                 {node.flash && <circle r="20" fill="none" stroke="#d85b35" strokeWidth="2" className="flash-ring" />}
-                {selectedId === node.id && <circle r="23" fill="none" stroke="#262624" strokeWidth="1.5" />}
-                {node.isNew && <circle r="19" fill="none" stroke={SUPPLEMENT_COLOR} strokeWidth="1.5" strokeDasharray="3 2" />}
-                {frontier && !node.isNew && node.status === 'unlearned' && <circle r="20" fill="none" stroke="#255c99" strokeDasharray="2 4" />}
+                {isSupplement && <circle r="19" fill="none" stroke={SUPPLEMENT_COLOR} strokeWidth="1.5" strokeDasharray="3 2" />}
+                {frontier && !isSupplement && node.status === 'unlearned' && <circle r="20" fill="none" stroke="#255c99" strokeDasharray="2 4" />}
 
                 {node.status === 'weak' ? (
                   <rect x="-11" y="-11" width="22" height="22" transform="rotate(45)" fill="#d85b35" stroke="#9f4025" strokeWidth="2" />
-                ) : node.isNew ? (
+                ) : isSupplement ? (
                   <rect
                     x="-10"
                     y="-10"
@@ -277,9 +343,9 @@ export default function Graph({ nodes, edges, selectedId, noteIds, filter, compa
                   />
                 )}
 
-                {node.isNew && <text x="0" y="-27" textAnchor="middle" fontSize="7.5" fontWeight="900" fill={SUPPLEMENT_COLOR}>{node.status === 'unlearned' ? 'ADDENDUM · 미학습' : 'ADDENDUM'}</text>}
+                {isSupplement && <text x="0" y="-27" textAnchor="middle" fontSize="7.5" fontWeight="900" fill={SUPPLEMENT_COLOR}>{node.status === 'unlearned' ? 'ADDENDUM · 미학습' : 'ADDENDUM'}</text>}
                 {noteIds.has(node.id) && <g><title>연결된 노트 코멘트 또는 약점 기록 있음</title><circle cx="13" cy="-13" r="4" fill="#f7f5ef" stroke="#d85b35" strokeWidth="2" /></g>}
-                {frontier && !node.isNew && <text x="0" y="-27" textAnchor="middle" fontSize="8.5" fontWeight="900" fill="#255c99">NEXT</text>}
+                {frontier && !isSupplement && <text x="0" y="-27" textAnchor="middle" fontSize="8.5" fontWeight="900" fill="#255c99">NEXT</text>}
               </g>
 
               <g pointerEvents="none">

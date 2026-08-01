@@ -9,11 +9,10 @@ import StudyPlanWorkspace from './components/StudyPlanWorkspace';
 import StreamPanel from './components/StreamPanel';
 import { LECTURE_NOTE_SECTIONS, NOTE_INSERTIONS } from './lectureNote';
 import { layoutByChapter, NODE_LAYOUT, placeNewNode, type Point } from './layout';
-import { extractPdfNote, loadDefaultPdfNote, type PdfNoteDocument } from './pdfNote';
+import { extractPdfNote, type PdfNoteDocument } from './pdfNote';
 import { buildNoteBundle } from './graphNote';
 import {
   CONVERSATION_META,
-  INITIAL_GRAPH,
   DETECTED_COMMENT,
   INITIAL_EDGES,
   INITIAL_NODES,
@@ -101,8 +100,8 @@ function initialNoteContent(): Record<string, string> {
 }
 
 export default function App() {
-  const [nodes, setNodes] = useState<RuntimeNode[]>(() => withLayout(INITIAL_NODES));
-  const [edges, setEdges] = useState<RuntimeEdge[]>(() => INITIAL_EDGES.map((edge) => ({ ...edge })));
+  const [nodes, setNodes] = useState<RuntimeNode[]>([]);
+  const [edges, setEdges] = useState<RuntimeEdge[]>([]);
   const [lines, setLines] = useState<StreamLine[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>('idle');
@@ -118,10 +117,9 @@ export default function App() {
   // 목 코멘트는 쓰지 않는다. 실제 node.comments 가 noteBundle 을 통해 들어온다.
   const [noteComments, setNoteComments] = useState<RuntimeNoteComment[]>([]);
   const [noteContent, setNoteContent] = useState<Record<string, string>>(() => initialNoteContent());
-  // dev:live 로 띄우면 INITIAL_GRAPH 가 곧 실제 실행 결과다.
-  const [chapters, setChapters] = useState<Chapter[]>(() => INITIAL_GRAPH.chapters ?? []);
+  const [chapters, setChapters] = useState<Chapter[]>([]);
   const [pdfNote, setPdfNote] = useState<PdfNoteDocument | null>(null);
-  const [pdfLoading, setPdfLoading] = useState(true);
+  const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
   const [resolvedWeakpoints, setResolvedWeakpoints] = useState<Set<string>>(() => new Set());
   const [minimapPosition, setMinimapPosition] = useState({ x: 12, y: 12 });
@@ -132,39 +130,12 @@ export default function App() {
   const lineId = useRef(0);
   const runToken = useRef(0);
   const pdfLoadToken = useRef(0);
+  const pdfInputRef = useRef<HTMLInputElement>(null);
   const workspaceRef = useRef<HTMLElement | null>(null);
   const minimapDragRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null);
 
   useEffect(() => {
-    void probeAgent().then((status) => {
-      setAgent(status);
-      // 화면 상태가 React 메모리에만 있으면 새로고침 한 번에 실행 결과가 날아간다.
-      // 서버의 그래프가 정본이므로 뜰 때 그걸 읽어 복구한다.
-      if (!status.available) return;
-      void fetchGraph().then((graph) => {
-        if (!graph || graph.nodes.length === 0) return;
-        setNodes(withLayout(graph.nodes, graph.edges, graph.chapters));
-        setEdges(graph.edges.map((edge) => ({ ...edge })));
-        setChapters(graph.chapters);
-      });
-    });
-  }, []);
-
-  useEffect(() => {
-    const token = ++pdfLoadToken.current;
-    void loadDefaultPdfNote()
-      .then((note) => {
-        if (pdfLoadToken.current !== token) return;
-        setPdfNote(note);
-        setPdfError(null);
-      })
-      .catch((error: unknown) => {
-        if (pdfLoadToken.current !== token) return;
-        setPdfError(error instanceof Error ? error.message : '기본 PDF를 불러오지 못했습니다.');
-      })
-      .finally(() => {
-        if (pdfLoadToken.current === token) setPdfLoading(false);
-      });
+    void probeAgent().then(setAgent);
   }, []);
 
   useEffect(() => {
@@ -225,8 +196,9 @@ export default function App() {
 
   const reset = () => {
     runToken.current++;
-    setNodes(withLayout(INITIAL_NODES));
-    setEdges(INITIAL_EDGES.map((edge) => ({ ...edge })));
+    setNodes([]);
+    setEdges([]);
+    setChapters([]);
     setLines([]);
     setSelectedId(null);
     setPhase('idle');
@@ -234,7 +206,10 @@ export default function App() {
     setPasted('');
     setMapFilter('all');
     setNoteMode(false);
+    setDocNote(false);
     setStudyMode(false);
+    setPdfNote(null);
+    setPdfError(null);
     setNoteComments([]);
     setNoteContent(initialNoteContent());
     setResolvedWeakpoints(new Set());
@@ -315,31 +290,22 @@ export default function App() {
 
   const importPdf = async (file: File) => {
     const token = ++pdfLoadToken.current;
+    setStudyMode(false);
+    setNoteMode(true);
     setPdfLoading(true);
     setPdfError(null);
     try {
       const note = await extractPdfNote(file, file.name);
       if (pdfLoadToken.current !== token) return;
       setPdfNote(note);
+      if (!agent.available) {
+        setPdfError(agent.reason ?? 'LLM 실행 환경을 사용할 수 없어 PDF 원문만 준비했습니다.');
+        return;
+      }
+      void buildGraphFromLecture(note.extractedText);
     } catch (error) {
       if (pdfLoadToken.current !== token) return;
       setPdfError(error instanceof Error ? error.message : 'PDF를 읽지 못했습니다.');
-    } finally {
-      if (pdfLoadToken.current === token) setPdfLoading(false);
-    }
-  };
-
-  const restoreDefaultPdf = async () => {
-    const token = ++pdfLoadToken.current;
-    setPdfLoading(true);
-    setPdfError(null);
-    try {
-      const note = await loadDefaultPdfNote();
-      if (pdfLoadToken.current !== token) return;
-      setPdfNote(note);
-    } catch (error) {
-      if (pdfLoadToken.current !== token) return;
-      setPdfError(error instanceof Error ? error.message : '기본 PDF를 불러오지 못했습니다.');
     } finally {
       if (pdfLoadToken.current === token) setPdfLoading(false);
     }
@@ -380,7 +346,9 @@ export default function App() {
         if (!alive()) return;
         void fetchGraph().then((graph) => {
           if (!alive() || !graph) return;
-          setNodes(withLayout(graph.nodes, graph.edges, graph.chapters).map((node) => ({ ...node, isNew: true })));
+          // 강의안에서 처음 만든 그래프는 전부 기본 노드다.
+          // isNew는 이후 학습 대화에서 추가된 보충 개념에만 사용한다.
+          setNodes(withLayout(graph.nodes, graph.edges, graph.chapters));
           setEdges(graph.edges.map((edge) => ({ ...edge })));
           setChapters(graph.chapters);
           setPhase('done');
@@ -435,6 +403,8 @@ export default function App() {
                 .filter((edge) => edge.from_id === node.id || edge.to_id === node.id)
                 .map((edge) => (edge.from_id === node.id ? edge.to_id : edge.from_id));
               const point = seen ?? NODE_LAYOUT[node.id] ?? placeNewNode(node.id, anchors, points);
+              // 같은 응답에서 뒤이어 배치되는 새 노드도 이 자리를 피하게 한다.
+              points[node.id] = { x: point.x, y: point.y };
               return { ...node, x: point.x, y: point.y, isNew: !known.has(node.id) };
             });
           });
@@ -689,11 +659,23 @@ export default function App() {
           onClick={() => { setNoteMode(false); setStudyMode(true); }}
           className={`ml-3 h-9 border px-3 text-[9px] font-black transition ${studyMode ? 'border-[#75492e] bg-[#75492e] text-white' : 'border-[#b99b72] bg-[#fffaf0] text-[#75492e] hover:border-[#75492e]'}`}
         >◎ 최소 학습 문서</button>
+        <input
+          ref={pdfInputRef}
+          type="file"
+          accept="application/pdf,.pdf"
+          className="sr-only"
+          onChange={(event) => {
+            const file = event.currentTarget.files?.[0];
+            if (file) void importPdf(file);
+            event.currentTarget.value = '';
+          }}
+        />
         <button
           type="button"
-          onClick={() => { setStudyMode(false); setNoteMode(true); }}
-          className={`ml-2 h-9 border px-3 text-[9px] font-black transition ${noteMode ? 'border-[#255c99] bg-[#255c99] text-white' : 'border-[#8aa7bf] bg-[#edf3f8] text-[#255c99] hover:border-[#255c99]'}`}
-        >▤ PDF 노트</button>
+          disabled={pdfLoading || phase === 'running'}
+          onClick={() => pdfInputRef.current?.click()}
+          className={`ml-2 h-9 border px-3 text-[9px] font-black transition disabled:cursor-wait disabled:opacity-50 ${noteMode ? 'border-[#255c99] bg-[#255c99] text-white' : 'border-[#8aa7bf] bg-[#edf3f8] text-[#255c99] hover:border-[#255c99]'}`}
+        >▤ {pdfLoading ? 'PDF 읽는 중…' : 'PDF 업로드'}</button>
         <div className="ml-auto flex h-full items-center border-x border-[#d2cec4]">
           {[
             ['학습', learnedCount],
@@ -743,7 +725,6 @@ export default function App() {
               note={pdfNote}
               onClose={() => setNoteMode(false)}
               onImportPdf={(file) => void importPdf(file)}
-              onRestoreDefault={() => void restoreDefaultPdf()}
               canRun={agent.available}
               running={phase === 'running'}
               onBuildGraph={(text) => void buildGraphFromLecture(text)}

@@ -7,7 +7,6 @@ interface Props {
   note: PdfNoteDocument | null;
   onClose: () => void;
   onImportPdf: (file: File) => void;
-  onRestoreDefault: () => void;
   /** 실제 실행이 가능한 개발 서버인지. 아니면 버튼을 감춘다 */
   canRun: boolean;
   running: boolean;
@@ -20,7 +19,6 @@ export default function PdfNoteWorkspace({
   note,
   onClose,
   onImportPdf,
-  onRestoreDefault,
   canRun,
   running,
   onBuildGraph,
@@ -58,9 +56,8 @@ export default function PdfNoteWorkspace({
             onClick={() => inputRef.current?.click()}
             className="border border-[#255c99] bg-[#edf3f8] px-3 py-2 text-[9px] font-black text-[#255c99] transition hover:bg-[#255c99] hover:text-white disabled:cursor-wait disabled:opacity-50"
           >
-            {isLoading ? 'PDF 읽는 중…' : 'PDF 교체'}
+            {isLoading ? 'PDF 읽는 중…' : 'PDF 업로드'}
           </button>
-          <button type="button" disabled={isLoading} onClick={onRestoreDefault} className="border border-[#bdb8ad] px-3 py-2 text-[9px] font-black text-[#666259] hover:border-[#7b766d] disabled:opacity-50">기본 PDF</button>
           <button type="button" onClick={onClose} className="border border-[#262624] bg-[#262624] px-3 py-2 text-[10px] font-black text-[#f7f5ef] transition hover:bg-[#464640]">지도로 돌아가기</button>
         </div>
       </header>
@@ -103,8 +100,8 @@ export default function PdfNoteWorkspace({
 
                 <section className="mt-8 border-l-4 border-[#255c99] bg-[#eef3f7] px-6 py-5">
                   <div className="text-[9px] font-black tracking-[0.14em] text-[#255c99]">LLM INPUT SOURCE</div>
-                  <p className="mt-3 text-[13px] leading-[1.9] text-[#40464b]">PDF에서 꺼낸 텍스트는 사용자에게 직접 보여 주는 노트가 아니라, 이후 지식그래프를 만들 모델에 전달할 원문으로 보관됩니다.</p>
-                  <p className="mt-3 text-[10px] leading-relaxed text-[#77818a]">현재 단계에서는 텍스트 추출과 보관까지만 동작하며 모델 전달은 아직 연결하지 않았습니다. LLM이나 OCR을 사용해 PDF를 읽지는 않습니다.</p>
+                  <p className="mt-3 text-[13px] leading-[1.9] text-[#40464b]">PDF에서 꺼낸 텍스트를 LLM에 전달해 해당 자료의 지식그래프와 노트를 만듭니다.</p>
+                  <p className="mt-3 text-[10px] leading-relaxed text-[#77818a]">텍스트 레이어가 있는 PDF를 지원하며, 업로드가 끝나면 그래프 생성이 자동으로 시작됩니다.</p>
                 </section>
 
                 <div className="mt-8 grid grid-cols-[1fr_auto_1fr_auto_1fr] items-center gap-3 text-center">
@@ -119,7 +116,7 @@ export default function PdfNoteWorkspace({
                       className="border border-[#255c99] bg-[#255c99] px-3 py-4 text-left text-white transition hover:bg-[#1d4a7d] disabled:opacity-50"
                     >
                       <div className="font-mono-term text-[8px] font-black text-[#bcd6ee]">RUN</div>
-                      <div className="mt-1 text-[10px] font-black">{running ? '그래프 만드는 중…' : '이 강의안으로 그래프 만들기'}</div>
+                      <div className="mt-1 text-[10px] font-black">{running ? '그래프 만드는 중…' : '그래프 다시 만들기'}</div>
                     </button>
                   ) : (
                     <div className="border border-dashed border-[#9fb5ca] bg-[#f6f9fb] px-3 py-4"><div className="font-mono-term text-[8px] font-black text-[#255c99]">NEXT</div><div className="mt-1 text-[10px] font-black text-[#255c99]">모델 입력</div></div>

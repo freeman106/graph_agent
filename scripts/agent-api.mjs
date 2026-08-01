@@ -16,7 +16,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { loadDotEnv, pythonEnv, ROOT, venvExists, venvPython } from './lib.mjs';
+import { loadDotEnv, pythonEnv, ROOT, stateFile, venvExists, venvPython } from './lib.mjs';
 import { fetchSharedConversation } from './chatgpt-share.mjs';
 
 /** 실행 가능 여부. 이유까지 돌려줘야 화면에서 안내할 수 있다. */
@@ -59,7 +59,7 @@ export function agentApi() {
       server.middlewares.use('/api/agent/graph', (_req, res) => {
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         try {
-          const raw = readFileSync(path.join(ROOT, 'agent', 'state', 'graph.json'), 'utf-8');
+          const raw = readFileSync(stateFile('graph.json'), 'utf-8');
           res.end(raw.replace(/^﻿/, ''));
         } catch {
           res.statusCode = 404;

@@ -73,10 +73,14 @@ button {
 
 .map-districts text {
   font-family: 'SF Mono', 'JetBrains Mono', 'Consolas', ui-monospace, monospace;
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: 1.5px;
-  fill: #8c877d;
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: 0.8px;
+  fill: #35332f;
+  paint-order: stroke;
+  stroke: #f7f5ef;
+  stroke-linejoin: round;
+  stroke-width: 5px;
 }
 
 @keyframes node-pop {

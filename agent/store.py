@@ -11,11 +11,17 @@ mark_progress / lookup_reference / quote_conversation 을 채운다.
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 import shutil
 import tempfile
+import threading
+import time
+from contextlib import contextmanager
+from functools import wraps
 from pathlib import Path
+from typing import Any, Callable, TypeVar
 
 from contract.schema import (
     Chapter,
@@ -44,6 +50,19 @@ from agent.config import DEFAULT_CONVERSATION, GRAPH_PATH, REFERENCE_BOOK, SEED_
 _SEP = re.compile(r"[\s_/]+")
 _PUNCT = re.compile(r"[^0-9a-z가-힣\- ]+")
 
+_T = TypeVar("_T")
+
+
+def _serialized_mutation(method: Callable[..., _T]) -> Callable[..., _T]:
+    """한 그래프 파일에 대한 read-modify-write 전체를 직렬화한다."""
+
+    @wraps(method)
+    def wrapped(self: "GraphStore", *args: Any, **kwargs: Any) -> _T:
+        with self._mutation():
+            return method(self, *args, **kwargs)
+
+    return wrapped
+
 
 def normalize(text: str) -> str:
     """소문자 + 구분자 통일. 결과가 예측 가능한 게 임베딩보다 중요하다."""
@@ -68,7 +87,69 @@ def slugify(name: str) -> str:
 class GraphStore:
     def __init__(self, path: Path = GRAPH_PATH) -> None:
         self.path = path
+        self._thread_lock = threading.RLock()
         self.graph = self._load()
+
+    @property
+    def _lock_path(self) -> Path:
+        """OneDrive 밖에 두는, 그래프 경로별 프로세스 잠금 파일."""
+        key = hashlib.sha256(str(self.path.resolve()).encode("utf-8")).hexdigest()
+        return Path(tempfile.gettempdir()) / "graph-agent-locks" / f"{key}.lock"
+
+    @contextmanager
+    def _process_lock(self):
+        """서로 다른 GraphStore/프로세스의 동시 쓰기도 막는다."""
+        lock_path = self._lock_path
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with lock_path.open("a+b") as lock_file:
+            lock_file.seek(0, os.SEEK_END)
+            if lock_file.tell() == 0:
+                lock_file.write(b"\0")
+                lock_file.flush()
+
+            deadline = time.monotonic() + 30.0
+            while True:
+                try:
+                    lock_file.seek(0)
+                    if os.name == "nt":
+                        import msvcrt
+
+                        msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+                    else:
+                        import fcntl
+
+                        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except OSError:
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError(
+                            f"그래프 저장 잠금을 30초 안에 얻지 못했습니다: {self.path}"
+                        )
+                    time.sleep(0.02)
+
+            try:
+                yield
+            finally:
+                lock_file.seek(0)
+                if os.name == "nt":
+                    import msvcrt
+
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+    @contextmanager
+    def _mutation(self):
+        """최신 파일을 읽은 뒤 한 번의 변경과 저장이 끝날 때까지 잠근다."""
+        with self._thread_lock:
+            with self._process_lock():
+                if self.path.exists():
+                    self.graph = Graph.model_validate_json(
+                        self.path.read_text(encoding=READ_ENCODING)
+                    )
+                yield
 
     # ── 파일 입출력 ──────────────────────────────────────────
     def _load(self) -> Graph:
@@ -94,11 +175,22 @@ class GraphStore:
         try:
             with os.fdopen(fd, "w", encoding=WRITE_ENCODING) as fh:
                 fh.write(self.graph.model_dump_json(indent=2))
-            os.replace(tmp, self.path)
+            # OneDrive/백신이 대상 파일을 아주 잠깐 잡는 경우 Windows에서는
+            # 원자적 교체도 WinError 5/32로 실패한다. 잠금이 풀릴 때까지
+            # 짧게 재시도하되 다른 오류는 즉시 드러낸다.
+            for attempt in range(9):
+                try:
+                    os.replace(tmp, self.path)
+                    break
+                except PermissionError:
+                    if attempt == 8:
+                        raise
+                    time.sleep(0.02 * (2**attempt))
         except BaseException:
             Path(tmp).unlink(missing_ok=True)
             raise
 
+    @_serialized_mutation
     def clear(self) -> None:
         """완전히 빈 그래프로 만든다. 강의안 실행의 출발점이다.
 
@@ -109,6 +201,7 @@ class GraphStore:
         self.graph = Graph()
         self.save()
 
+    @_serialized_mutation
     def reset(self) -> None:
         """시드 그래프로 되돌린다. 데모를 다시 돌릴 때 쓴다."""
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -162,6 +255,7 @@ class GraphStore:
         return round(0.3 + 0.3 * ratio, 3)
 
     # ── 변경 ────────────────────────────────────────────────
+    @_serialized_mutation
     def create_node(
         self,
         name: str,
@@ -234,6 +328,7 @@ class GraphStore:
                 return chapter
         return None
 
+    @_serialized_mutation
     def create_chapter(self, title: str) -> str:
         chapter_id = slugify(title)
         if self.chapter(chapter_id) is None:
@@ -241,6 +336,7 @@ class GraphStore:
             self.save()
         return chapter_id
 
+    @_serialized_mutation
     def create_subtopic(self, chapter_id: str, title: str, blurb: str = "") -> str:
         chapter = self.chapter(chapter_id)
         if chapter is None:
@@ -288,6 +384,7 @@ class GraphStore:
 
         return neighbors
 
+    @_serialized_mutation
     def link_nodes(
         self, from_id: str, to_id: str, relation: Relation, rationale: str
     ) -> str:
@@ -330,6 +427,7 @@ class GraphStore:
         self.save()
         return edge_id
 
+    @_serialized_mutation
     def merge_nodes(self, keep_id: str, merge_id: str, reason: str) -> str:
         if keep_id == merge_id:
             raise ValueError("병합할 두 노드는 달라야 합니다")
@@ -377,6 +475,7 @@ class GraphStore:
         self.save()
         return keep_id
 
+    @_serialized_mutation
     def mark_progress(
         self, node_id: str, status: NodeStatus, comment: Comment | None = None
     ) -> bool:

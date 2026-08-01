@@ -34,6 +34,40 @@ interface SelectionDraft {
 
 const prefersReducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+function quoteRange(body: string, quote: string): { start: number; end: number } | null {
+  const exactStart = body.indexOf(quote);
+  if (exactStart >= 0) return { start: exactStart, end: exactStart + quote.length };
+
+  const normalizedChars: string[] = [];
+  const starts: number[] = [];
+  const ends: number[] = [];
+  for (let index = 0; index < body.length; index += 1) {
+    const character = body[index];
+    if (/\s/.test(character)) {
+      if (normalizedChars.length === 0 || normalizedChars.at(-1) === ' ') continue;
+      normalizedChars.push(' ');
+      starts.push(index);
+      ends.push(index + 1);
+    } else {
+      normalizedChars.push(character);
+      starts.push(index);
+      ends.push(index + 1);
+    }
+  }
+  while (normalizedChars.at(-1) === ' ') {
+    normalizedChars.pop();
+    starts.pop();
+    ends.pop();
+  }
+
+  const normalizedQuote = quote.replace(/\s+/g, ' ').trim();
+  if (!normalizedQuote) return null;
+  const normalizedStart = normalizedChars.join('').indexOf(normalizedQuote);
+  if (normalizedStart < 0) return null;
+  const lastIndex = normalizedStart + normalizedQuote.length - 1;
+  return { start: starts[normalizedStart], end: ends[lastIndex] };
+}
+
 export default function NoteWorkspace({
   activeAnchorId,
   annotationsVisible,
@@ -59,6 +93,16 @@ export default function NoteWorkspace({
   const NOTE_INSERTIONS = bundle?.insertions ?? DEFAULT_INSERTIONS;
   const anchorForNode = (nodeId: string) =>
     bundle ? (bundle.anchorOf[nodeId] ?? '') : defaultAnchorForNode(nodeId);
+  const activeNodeId = useMemo(() => {
+    for (const section of LECTURE_NOTE_SECTIONS) {
+      const paragraph = section.paragraphs.find((candidate) => candidate.id === activeAnchorId);
+      if (paragraph) return paragraph.nodeId;
+    }
+    for (const insertion of NOTE_INSERTIONS) {
+      if (activeAnchorId === insertion.id || activeAnchorId.startsWith(`${insertion.id}-`)) return insertion.nodeId;
+    }
+    return null;
+  }, [activeAnchorId, LECTURE_NOTE_SECTIONS, NOTE_INSERTIONS]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const articleRef = useRef<HTMLElement>(null);
@@ -138,9 +182,10 @@ export default function NoteWorkspace({
     const ranges: Array<{ start: number; end: number; comment: RuntimeNoteComment | null; key: string; pending: boolean }> = visibleComments
       .filter((comment) => comment.highlighted !== false && comment.anchorId === paragraphId && comment.quote)
       .map((comment) => {
-        const start = comment.start ?? body.indexOf(comment.quote!);
-        const end = comment.end ?? start + (comment.quote?.length ?? 0);
-        return { start, end, comment, key: comment.id, pending: false };
+        const found = comment.start === undefined || comment.end === undefined
+          ? quoteRange(body, comment.quote!)
+          : { start: comment.start, end: comment.end };
+        return { start: found?.start ?? -1, end: found?.end ?? -1, comment, key: comment.id, pending: false };
       })
       .filter((range) => range.start >= 0)
       .sort((a, b) => a.start - b.start || Number(Boolean(b.comment?.createdNow)) - Number(Boolean(a.comment?.createdNow)));
@@ -356,7 +401,7 @@ export default function NoteWorkspace({
                         if (window.getSelection()?.toString().trim()) return;
                         onNavigate(insertion.nodeId, insertion.id);
                       }}
-                      className={`cursor-pointer scroll-mt-28 border-l-2 py-0.5 pl-4 text-[13px] leading-[1.95] text-[#584d43] transition-colors ${activeAnchorId === insertion.id ? 'border-[#b66b32] bg-[#fff3df]' : 'border-transparent hover:border-[#cf9a68]'}`}
+                      className={`cursor-pointer scroll-mt-28 whitespace-pre-line border-l-2 py-0.5 pl-4 text-[13px] leading-[1.95] text-[#584d43] transition-colors ${activeNodeId === insertion.nodeId ? 'border-[#255c99] bg-[#eef3f8]' : 'border-transparent hover:border-[#cf9a68]'}`}
                     >
                       {renderHighlightedText(body, paragraphId)}
                     </p>
@@ -445,7 +490,7 @@ export default function NoteWorkspace({
                   <h2 className="mb-6 text-[25px] leading-tight font-black tracking-[-0.035em] text-[#2d2c29]">{section.title}</h2>
                   <div className="space-y-5">
                     {section.paragraphs.map((paragraph) => {
-                      const active = activeAnchorId === paragraph.id;
+                      const active = activeNodeId === paragraph.nodeId;
                       const body = noteContent[paragraph.id] ?? paragraph.body;
                       if (isEditingNote) {
                         return (
@@ -470,7 +515,7 @@ export default function NoteWorkspace({
                             onNavigate(paragraph.nodeId, paragraph.id);
                             scrollToAnchor(paragraph.id);
                           }}
-                          className={`cursor-pointer scroll-mt-28 border-l-2 py-0.5 pl-4 text-[14px] leading-[2.05] text-[#4e4b45] transition-colors ${active ? 'border-[#255c99] bg-[#eef3f8]' : 'border-transparent hover:border-[#9fb5ca] hover:bg-[#f4f7f9]'}`}
+                          className={`cursor-pointer scroll-mt-28 whitespace-pre-line border-l-2 py-0.5 pl-4 text-[14px] leading-[2.05] text-[#4e4b45] transition-colors ${active ? 'border-[#255c99] bg-[#eef3f8]' : 'border-transparent hover:border-[#9fb5ca] hover:bg-[#f4f7f9]'}`}
                         >
                           {renderHighlightedText(body, paragraph.id)}
                         </p>
@@ -582,7 +627,7 @@ export default function NoteWorkspace({
                 {visibleComments.filter((comment) => comment.anchorId !== null).map((comment) => {
                   const node = nodes.find((candidate) => candidate.id === comment.nodeId);
                   const active = activeCommentId === comment.id;
-                  const canRestoreHighlight = Boolean(comment.anchorId && comment.quote && noteContent[comment.anchorId]?.includes(comment.quote));
+                  const canRestoreHighlight = Boolean(comment.anchorId && comment.quote && quoteRange(noteContent[comment.anchorId] ?? '', comment.quote));
                   const relatedTargets = relatedTargetsFor(comment);
                   return (
                     <article

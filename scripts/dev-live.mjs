@@ -11,17 +11,17 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 
-import { c, ROOT, run } from './lib.mjs';
+import { c, ROOT, run, stateFile } from './lib.mjs';
 
 // 계약이 깨진 상태로는 띄우지 않는다. npm 의 predev 는 dev 에만 걸려 있다.
 if (run(process.execPath, ['scripts/contract-check.mjs', '--quiet']) !== 0) {
   process.exit(1);
 }
 
-const live = path.join(ROOT, 'agent', 'state', 'graph.json');
+const live = stateFile('graph.json');
 
 if (existsSync(live)) {
-  console.log(`${c.dim('실제 실행 그래프를 사용합니다')} ${c.cyan('agent/state/graph.json')}`);
+  console.log(`${c.dim('실제 실행 그래프를 사용합니다')} ${c.cyan(live)}`);
 } else {
   console.log(`${c.red('✗')} 실제 실행 결과가 없습니다.`);
   console.log(`  ${c.dim('먼저 에이전트를 한 번 돌리세요:')}`);
