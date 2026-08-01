@@ -1149,10 +1149,7 @@ export default function App() {
             <circle cx="26.3" cy="7.1" r="1.35" fill="#f7f5ef" stroke="#d85b35" strokeWidth="1" />
           </svg>
         </div>
-        <div className="flex items-baseline gap-3">
-          <h1 className="text-[15px] font-black tracking-[-0.02em]">GRAPHMIND</h1>
-          <span className="text-[10px] font-semibold tracking-[0.18em] text-[#77736a]">개인 지식 지도</span>
-        </div>
+        <h1 className="text-[19px] font-black tracking-[-0.035em]">GRAPHMIND</h1>
         <div className="relative ml-6 flex h-9 items-center border border-[#bdb8ad] bg-[#f8f6f0]">
           <label htmlFor="subject-select" className="border-r border-[#d2cec4] px-2.5 font-mono-term text-[8px] font-black tracking-[0.12em] text-[#8c877d]">과목</label>
           <select
@@ -1293,8 +1290,7 @@ export default function App() {
             >
               {noteLayout && <span className="mr-2 text-[13px] tracking-[-0.15em] text-[#9a958b]" aria-hidden="true">⠿</span>}
               <div>
-                <div className={`${noteLayout ? 'text-[8px]' : 'text-[10px]'} font-black tracking-[0.16em] text-[#77736a]`}>TRANSFORMER / COGNITIVE ATLAS</div>
-                <div className={`${noteLayout ? 'mt-0.5 text-[8px]' : 'mt-1 text-[10px]'} font-mono-term text-[#9a958b]`}>{nodes.length} CONCEPTS · {edges.length} RELATIONS</div>
+                <div className={`${noteLayout ? 'text-[8px]' : 'text-[10px]'} font-mono-term text-[#9a958b]`}>{nodes.length} CONCEPTS · {edges.length} RELATIONS</div>
               </div>
               {!noteLayout && <div className="ml-auto flex items-center gap-1 border border-[#bdb8ad] bg-[#f7f5ef] p-[3px]">
                 {[
