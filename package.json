@@ -8,6 +8,7 @@
     "check": "node scripts/check.mjs",
     "predev": "node scripts/contract-check.mjs --quiet",
     "dev": "vite",
+    "dev:live": "node scripts/dev-live.mjs",
     "build": "node scripts/build.mjs",
     "preview": "vite preview",
     "agent": "node scripts/agent.mjs",
