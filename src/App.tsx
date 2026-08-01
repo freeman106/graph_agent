@@ -7,8 +7,8 @@ import NoteWorkspace from './components/NoteWorkspace';
 import PdfNoteWorkspace from './components/PdfNoteWorkspace';
 import StudyPlanWorkspace from './components/StudyPlanWorkspace';
 import StreamPanel from './components/StreamPanel';
-import { LECTURE_NOTE_SECTIONS, NOTE_COMMENTS, NOTE_INSERTIONS } from './lectureNote';
-import { NODE_LAYOUT, placeNewNode, type Point } from './layout';
+import { LECTURE_NOTE_SECTIONS, NOTE_INSERTIONS } from './lectureNote';
+import { layoutByChapter, NODE_LAYOUT, placeNewNode, type Point } from './layout';
 import { extractPdfNote, loadDefaultPdfNote, type PdfNoteDocument } from './pdfNote';
 import { buildNoteBundle } from './graphNote';
 import {
@@ -24,14 +24,40 @@ import {
   TOOL_STEPS,
   WEAKPOINT_NODE_ID,
 } from './mock';
-import { fetchGraph, probeAgent, runAgent, runLecture, toStreamLine, type AgentStatus } from './agentApi';
+import { fetchGraph, fetchSharedChat, isShareUrl, probeAgent, runAgent, runLecture, toStreamLine, type AgentStatus } from './agentApi';
 import type { RuntimeEdge, RuntimeNode, RuntimeNoteComment, StreamLine, StreamLineKind } from './view';
 
 type Phase = 'idle' | 'running' | 'done';
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, Math.round(ms * 0.42)));
 
-function withLayout(nodes: Node[], edges: Edge[] = INITIAL_EDGES): RuntimeNode[] {
+function withLayout(
+  nodes: Node[],
+  edges: Edge[] = INITIAL_EDGES,
+  chapters: Chapter[] = [],
+): RuntimeNode[] {
+  // 단원이 있으면 그게 곧 세로 줄이다. 손으로 잡은 좌표보다 우선한다.
+  if (chapters.length > 0) {
+    const { points } = layoutByChapter(chapters, nodes);
+    const rest: Record<string, Point> = { ...points };
+    return nodes.map((node) => {
+      let point = points[node.id];
+      if (!point) {
+        const anchors = edges
+          .filter((edge) => edge.from_id === node.id || edge.to_id === node.id)
+          .map((edge) => (edge.from_id === node.id ? edge.to_id : edge.from_id));
+        point = placeNewNode(node.id, anchors, rest);
+        rest[node.id] = point;
+      }
+      return {
+        ...node,
+        status: node.status === 'weak' ? 'learned' : node.status,
+        comments: [],
+        ...point,
+      };
+    });
+  }
+
   // NODE_LAYOUT 은 손으로 잡은 시드 좌표라 강의안이 만든 노드는 들어 있지 않다.
   // 좌표가 없으면 (0,0) 에 쌓이므로, 이웃을 보고 자리를 잡아 준다.
   const placed: Record<string, Point> = {};
@@ -89,7 +115,8 @@ export default function App() {
   const [activeNoteAnchor, setActiveNoteAnchor] = useState('');
   const [noteNavigationVersion, setNoteNavigationVersion] = useState(0);
   const [studyMode, setStudyMode] = useState(false);
-  const [noteComments, setNoteComments] = useState<RuntimeNoteComment[]>(() => NOTE_COMMENTS.map((comment) => ({ ...comment, kind: 'agent' as const, highlighted: true, archived: false })));
+  // 목 코멘트는 쓰지 않는다. 실제 node.comments 가 noteBundle 을 통해 들어온다.
+  const [noteComments, setNoteComments] = useState<RuntimeNoteComment[]>([]);
   const [noteContent, setNoteContent] = useState<Record<string, string>>(() => initialNoteContent());
   // dev:live 로 띄우면 INITIAL_GRAPH 가 곧 실제 실행 결과다.
   const [chapters, setChapters] = useState<Chapter[]>(() => INITIAL_GRAPH.chapters ?? []);
@@ -109,7 +136,18 @@ export default function App() {
   const minimapDragRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null);
 
   useEffect(() => {
-    void probeAgent().then(setAgent);
+    void probeAgent().then((status) => {
+      setAgent(status);
+      // 화면 상태가 React 메모리에만 있으면 새로고침 한 번에 실행 결과가 날아간다.
+      // 서버의 그래프가 정본이므로 뜰 때 그걸 읽어 복구한다.
+      if (!status.available) return;
+      void fetchGraph().then((graph) => {
+        if (!graph || graph.nodes.length === 0) return;
+        setNodes(withLayout(graph.nodes, graph.edges, graph.chapters));
+        setEdges(graph.edges.map((edge) => ({ ...edge })));
+        setChapters(graph.chapters);
+      });
+    });
   }, []);
 
   useEffect(() => {
@@ -158,6 +196,11 @@ export default function App() {
     [chapters, nodes, pdfNote],
   );
 
+  const graphColumns = useMemo(
+    () => (chapters.length > 0 ? layoutByChapter(chapters, nodes).columns : []),
+    [chapters, nodes],
+  );
+
   // 노트가 열리면(PDF든 문서든) 그래프는 미니맵으로 접힌다.
   const noteLayout = noteMode || docNote;
 
@@ -192,7 +235,7 @@ export default function App() {
     setMapFilter('all');
     setNoteMode(false);
     setStudyMode(false);
-    setNoteComments(NOTE_COMMENTS.map((comment) => ({ ...comment, kind: 'agent' as const, highlighted: true, archived: false })));
+    setNoteComments([]);
     setNoteContent(initialNoteContent());
     setResolvedWeakpoints(new Set());
     setMinimapPosition({ x: 12, y: 12 });
@@ -337,7 +380,7 @@ export default function App() {
         if (!alive()) return;
         void fetchGraph().then((graph) => {
           if (!alive() || !graph) return;
-          setNodes(withLayout(graph.nodes, graph.edges).map((node) => ({ ...node, isNew: true })));
+          setNodes(withLayout(graph.nodes, graph.edges, graph.chapters).map((node) => ({ ...node, isNew: true })));
           setEdges(graph.edges.map((edge) => ({ ...edge })));
           setChapters(graph.chapters);
           setPhase('done');
@@ -410,6 +453,23 @@ export default function App() {
   };
 
   const run = async (text: string) => {
+    // 붙여넣은 게 ChatGPT 공유 링크면 대화를 먼저 받아 온다.
+    if (isShareUrl(text)) {
+      if (!agent.available) {
+        push('system', '공유 링크를 읽으려면 개발 서버에 API 키가 필요합니다.');
+        return;
+      }
+      setPhase('running');
+      push('system', `공유 링크에서 대화를 가져오는 중…`);
+      const fetched = await fetchSharedChat(text.trim());
+      if ('error' in fetched) {
+        push('system', `가져오기 실패 — ${fetched.error}`);
+        setPhase('idle');
+        return;
+      }
+      push('system', `대화 ${fetched.turnCount}턴 · ${fetched.text.length.toLocaleString()}자 확보`);
+      return runLive(fetched.text);
+    }
     if (agent.available) return runLive(text);
     const token = ++runToken.current;
     const alive = () => runToken.current === token;
@@ -563,7 +623,7 @@ export default function App() {
   };
 
   const handlePaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    if (phase !== 'idle') return;
+    if (phase === 'running') return;
     const text = event.clipboardData.getData('text');
     if (text.trim().length < 20) return;
     event.preventDefault();
@@ -659,7 +719,7 @@ export default function App() {
             <NoteWorkspace
               activeAnchorId={activeNoteAnchor}
               annotationsVisible
-              comments={noteComments}
+              comments={[...(noteBundle?.comments ?? []), ...noteComments]}
               edges={edges}
               navigationVersion={noteNavigationVersion}
               noteContent={{ ...noteBundle.noteContent, ...noteContent }}
@@ -748,7 +808,7 @@ export default function App() {
             </div>
 
             <div className={`absolute inset-0 ${noteLayout ? 'top-[42px]' : 'top-[58px]'}`}>
-              <Graph nodes={nodes} edges={edges} selectedId={selectedId} noteIds={noteIds} filter={mapFilter} onSelect={selectFromGraph} compact={noteLayout} />
+              <Graph nodes={nodes} edges={edges} selectedId={selectedId} noteIds={noteIds} filter={mapFilter} onSelect={selectFromGraph} compact={noteLayout} columns={graphColumns} />
               {!noteLayout && <Legend />}
               {selectedNode && !noteLayout && (
                 <NodeDetail
@@ -784,7 +844,7 @@ export default function App() {
               value={pasted}
               onPaste={handlePaste}
               onChange={(event) => setPasted(event.target.value)}
-              readOnly={phase !== 'idle'}
+              readOnly={phase === 'running'}
               placeholder="여기에 ChatGPT 또는 Claude 학습 대화를 붙여넣으세요…"
               className="light-scroll h-[92px] w-full resize-none border border-[#bdb8ad] bg-[#f8f6f0] px-3 py-2.5 text-[12px] leading-relaxed text-[#3c3a36] outline-none placeholder:text-[#aaa59b] focus:border-[#262624] disabled:opacity-60"
             />

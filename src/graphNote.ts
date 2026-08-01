@@ -13,7 +13,7 @@
  */
 
 import type { Chapter } from '../contract/schema';
-import type { RuntimeNode } from './view';
+import type { RuntimeNode, RuntimeNoteComment } from './view';
 
 export interface NoteBundle {
   meta: { title: string; course: string; author: string; updatedAt: string; readingMinutes: number };
@@ -36,6 +36,8 @@ export interface NoteBundle {
   }>;
   noteContent: Record<string, string>;
   anchorOf: Record<string, string>;
+  /** 실제 노드에 달린 코멘트. 목 데이터는 섞지 않는다 */
+  comments: RuntimeNoteComment[];
 }
 
 const paragraphsOf = (document: string) =>
@@ -54,6 +56,7 @@ export function buildNoteBundle(
   const insertions: NoteBundle['insertions'] = [];
   const noteContent: Record<string, string> = {};
   const anchorOf: Record<string, string> = {};
+  const comments: RuntimeNoteComment[] = [];
 
   chapters.forEach((chapter, chapterIndex) => {
     const sectionIds: string[] = [];
@@ -64,11 +67,33 @@ export function buildNoteBundle(
       const paragraphs: NoteBundle['sections'][number]['paragraphs'] = [];
 
       for (const node of fromLecture) {
-        paragraphsOf(node.document).forEach((body, index) => {
+        const bodies = paragraphsOf(node.document);
+        bodies.forEach((body, index) => {
           const id = `${node.id}-p${index + 1}`;
           paragraphs.push({ id, nodeId: node.id, body });
           noteContent[id] = body;
           if (index === 0) anchorOf[node.id] = id;
+        });
+        node.comments.forEach((comment, index) => {
+          // 인용문이 들어 있는 문단을 앵커로 삼는다. 없으면 첫 문단.
+          const at = comment.quote
+            ? bodies.findIndex((body) => body.includes(comment.quote as string))
+            : -1;
+          comments.push({
+            id: `${node.id}-c${index + 1}`,
+            anchorId: `${node.id}-p${(at >= 0 ? at : 0) + 1}`,
+            quote: comment.quote,
+            nodeId: node.id,
+            title: comment.weakpoint ? '막힌 지점' : '코멘트',
+            body: comment.body,
+            source: comment.source_conversation_id ?? '대화',
+            relatedNodeId: null,
+            relatedAnchorId: null,
+            revealOnRun: false,
+            kind: 'agent',
+            highlighted: true,
+            archived: false,
+          } as RuntimeNoteComment);
         });
       }
 
@@ -129,5 +154,6 @@ export function buildNoteBundle(
     insertions,
     noteContent,
     anchorOf,
+    comments,
   };
 }

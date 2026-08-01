@@ -37,6 +37,31 @@ export async function fetchGraph(): Promise<Graph | null> {
   }
 }
 
+/**
+ * ChatGPT 공유 링크에서 대화를 가져온다.
+ * 브라우저가 직접 chatgpt.com 을 부르면 CORS 에 막히므로 개발 서버가 대신 받는다.
+ */
+export async function fetchSharedChat(
+  url: string,
+): Promise<{ text: string; turnCount: number } | { error: string }> {
+  try {
+    const res = await fetch('/api/agent/share', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    const body = await res.json();
+    return res.ok ? body : { error: body.error ?? '공유 링크를 읽지 못했습니다.' };
+  } catch {
+    return { error: '개발 서버에 연결할 수 없습니다.' };
+  }
+}
+
+/** 붙여넣은 값이 ChatGPT 공유 링크인가. */
+export function isShareUrl(value: string): boolean {
+  return /^https?:\/\/(chatgpt\.com|chat\.openai\.com)\/share\//i.test(value.trim());
+}
+
 type Handlers = {
   onEvent: (event: StreamEvent) => void;
   onDone: () => void;

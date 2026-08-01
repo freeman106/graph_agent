@@ -110,3 +110,54 @@ export function placeNewNode(
 
   return candidate;
 }
+
+
+/* ── 단원 기준 배치 ─────────────────────────────────────────
+ * 단원이 그래프의 세로 줄이다(계약 설계). 좌표는 계약에 없으므로
+ * 프론트가 단원 순서를 x, 단원 안 순서를 y 로 편다.
+ */
+
+export interface Column {
+  id: string;
+  title: string;
+  x: number;
+  width: number;
+}
+
+export function layoutByChapter(
+  chapters: Array<{ id: string; title: string; subtopics: Array<{ id: string }> }>,
+  nodes: Array<{ id: string; chapter_id: string | null; subtopic_id: string | null }>,
+): { points: Record<string, Point>; columns: Column[] } {
+  const columns: Column[] = [];
+  const points: Record<string, Point> = {};
+  if (chapters.length === 0) return { points, columns };
+
+  const margin = 40;
+  const usable = GRAPH_VIEWBOX.width - margin * 2;
+  const width = usable / chapters.length;
+
+  chapters.forEach((chapter, index) => {
+    const x = margin + width * index;
+    columns.push({ id: chapter.id, title: chapter.title, x, width });
+
+    // 이 단원에 속한 노드를 소주제 순서대로 세운다.
+    const order = new Map(chapter.subtopics.map((s, i) => [s.id, i]));
+    const mine = nodes
+      .filter((node) => node.chapter_id === chapter.id)
+      .sort((a, b) => (order.get(a.subtopic_id ?? '') ?? 99) - (order.get(b.subtopic_id ?? '') ?? 99));
+
+    const top = 96;
+    const bottom = GRAPH_VIEWBOX.height - 90;
+    const step = mine.length > 1 ? (bottom - top) / (mine.length - 1) : 0;
+    mine.forEach((node, row) => {
+      // 짝수/홀수 행을 좌우로 조금 어긋내 라벨이 겹치지 않게 한다.
+      const jitter = row % 2 === 0 ? -width * 0.16 : width * 0.16;
+      points[node.id] = {
+        x: x + width / 2 + jitter,
+        y: mine.length > 1 ? top + step * row : (top + bottom) / 2,
+      };
+    });
+  });
+
+  return { points, columns };
+}

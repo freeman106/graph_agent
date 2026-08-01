@@ -17,6 +17,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { loadDotEnv, pythonEnv, ROOT, venvExists, venvPython } from './lib.mjs';
+import { fetchSharedConversation } from './chatgpt-share.mjs';
 
 /** 실행 가능 여부. 이유까지 돌려줘야 화면에서 안내할 수 있다. */
 function probe() {
@@ -76,6 +77,19 @@ export function agentApi() {
           textPath,
         ]),
       );
+
+      server.middlewares.use('/api/agent/share', async (req, res) => {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        try {
+          const body = await readBody(req);
+          const { url } = JSON.parse(body || '{}');
+          const result = await fetchSharedConversation(url ?? '');
+          res.end(JSON.stringify(result));
+        } catch (error) {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ error: error.message ?? '공유 링크를 읽지 못했습니다.' }));
+        }
+      });
 
       server.middlewares.use('/api/agent/run', (req, res) =>
         runAgent(req, res, (textPath) => [

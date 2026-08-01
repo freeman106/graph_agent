@@ -15,6 +15,8 @@ interface Props {
   noteIds: Set<string>;
   filter: string;
   compact?: boolean;
+  /** 단원 세로 줄. 그래프 데이터에서 나온다. 없으면 구획을 그리지 않는다 */
+  columns?: Array<{ id: string; title: string; x: number; width: number }>;
   onSelect: (id: string | null) => void;
 }
 
@@ -40,7 +42,7 @@ const edgeDash = (relation: RuntimeEdge['relation']) => {
   return undefined;
 };
 
-export default function Graph({ nodes, edges, selectedId, noteIds, filter, compact = false, onSelect }: Props) {
+export default function Graph({ nodes, edges, selectedId, noteIds, filter, compact = false, columns = [], onSelect }: Props) {
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [viewBox, setViewBox] = useState(FULL_VIEW);
   const animationFrame = useRef<number | null>(null);
@@ -147,14 +149,17 @@ export default function Graph({ nodes, edges, selectedId, noteIds, filter, compa
 
       <rect width={GRAPH_VIEWBOX.width} height={GRAPH_VIEWBOX.height} fill="url(#paper-grid)" opacity="0.58" />
 
-      {!compact && <g className="map-districts" pointerEvents="none">
-        <path d="M 206 30 V 535" stroke="#b8b3a8" strokeWidth="1" />
-        <path d="M 695 30 V 535" stroke="#b8b3a8" strokeWidth="1" />
-        <path d="M 32 535 H 1028" stroke="#b8b3a8" strokeWidth="1" />
-        <text x="42" y="48">01 / INPUT</text>
-        <text x="230" y="48">02 / ATTENTION</text>
-        <text x="720" y="48">03 / ARCHITECTURE</text>
-        <text x="42" y="560">04 / DECODING</text>
+      {!compact && columns.length > 0 && <g className="map-districts" pointerEvents="none">
+        {columns.map((column, index) => (
+          <g key={column.id}>
+            {index > 0 && (
+              <path d={`M ${column.x - 8} 30 V ${GRAPH_VIEWBOX.height - 40}`} stroke="#b8b3a8" strokeWidth="1" />
+            )}
+            <text x={column.x + 10} y="48">
+              {String(index + 1).padStart(2, '0')} / {column.title}
+            </text>
+          </g>
+        ))}
       </g>}
 
       <g>

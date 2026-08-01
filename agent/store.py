@@ -11,8 +11,10 @@ mark_progress / lookup_reference / quote_conversation 을 채운다.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
+import tempfile
 from pathlib import Path
 
 from contract.schema import (
@@ -75,10 +77,27 @@ class GraphStore:
         return Graph.model_validate_json(self.path.read_text(encoding=READ_ENCODING))
 
     def save(self) -> None:
+        """임시 파일에 쓰고 이름을 바꾼다.
+
+        같은 그래프 파일을 두 프로세스가 동시에 쓰면(CLI 실행과 브라우저 실행이
+        겹치는 경우) 짧은 쪽이 긴 쪽을 다 덮지 못해 뒤에 이전 내용의 꼬리가 남고
+        JSON 이 깨진다. os.replace 는 원자적이라 둘 중 하나가 통째로 남는다.
+
+        임시 파일 이름은 호출마다 달라야 한다. SDK 는 한 턴의 툴 호출을 병렬로
+        실행하므로, 이름이 같으면 먼저 끝난 호출이 임시 파일을 옮겨 버려 나머지가
+        ENOENT 로 죽는다.
+        """
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(
-            self.graph.model_dump_json(indent=2), encoding=WRITE_ENCODING
+        fd, tmp = tempfile.mkstemp(
+            dir=self.path.parent, prefix=f"{self.path.name}.", suffix=".tmp"
         )
+        try:
+            with os.fdopen(fd, "w", encoding=WRITE_ENCODING) as fh:
+                fh.write(self.graph.model_dump_json(indent=2))
+            os.replace(tmp, self.path)
+        except BaseException:
+            Path(tmp).unlink(missing_ok=True)
+            raise
 
     def clear(self) -> None:
         """완전히 빈 그래프로 만든다. 강의안 실행의 출발점이다.
@@ -192,7 +211,8 @@ class GraphStore:
                 document=document,
                 chapter_id=chapter_id,
                 subtopic_id=subtopic_id,
-                status="learned",
+                # 갓 만들어진 개념은 아직 안 배운 것이다. 상태는 mark_progress 로 모델이 정한다.
+                status="unlearned",
                 origin=origin,
                 comments=[],
                 source_conversation_id=source_conversation_id,

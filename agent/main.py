@@ -29,6 +29,7 @@ from agent.config import (
     GRAPH_PATH,
     LAST_RUN_PATH,
     MAX_STEPS,
+    MAX_STEPS_LECTURE,
     MODE,
     MODEL,
 )
@@ -269,7 +270,6 @@ create_node 직전 최종 확인:
 # "단계를 강제하지 않는다"(AGENTS.md 7절) 와 부딪히지 않는다.
 
 _READ_TOOLS = [
-    tool_module.search_nodes,
     tool_module.get_neighbors,
     tool_module.lookup_reference,
 ]
@@ -281,7 +281,13 @@ _GRAPH_TOOLS = [
     tool_module.mark_progress,
 ]
 
-# 강의안 실행 — 단원/소주제를 만들 수 있다. 대화가 없으므로 quote_conversation 이 없다.
+# 강의안 실행 — 단원/소주제를 만들 수 있다.
+#
+# search_nodes 가 없다. 빈 그래프에서 시작하므로 첫 노드를 만들기 전 검색은
+# 언제나 빈 결과이고, 노드 20여 개를 만드는 동안 그만큼 스텝을 쓴다. 같은 실행
+# 안에서 중복이 생기는 문제는 store.create_node 가 막는다 — 같은 slug 면 새로
+# 만들지 않고 기존 id 를 돌려준다.
+# 대화가 없으므로 quote_conversation 도 없다.
 LECTURE_TOOLS = [
     *_READ_TOOLS,
     tool_module.create_chapter,
@@ -289,8 +295,9 @@ LECTURE_TOOLS = [
     *_GRAPH_TOOLS,
 ]
 
-# 대화 실행 — 단원/소주제를 만들 수 없다. 대신 대화를 인용할 수 있다.
+# 대화 실행 — 단원/소주제를 만들 수 없다. 대신 기존 노드를 찾고 대화를 인용한다.
 CONVERSATION_TOOLS = [
+    tool_module.search_nodes,
     *_READ_TOOLS,
     tool_module.quote_conversation,
     *_GRAPH_TOOLS,
@@ -334,6 +341,26 @@ def render_chapters() -> str:
     return "\n".join(lines) + "\n"
 
 
+def render_lecture(text: str, lecture_id: str) -> str:
+    """강의안을 모델 입력으로 편다.
+
+    맨 앞에 그래프 상태를 알려 준다. 이게 없으면 모델은 그래프가 비었는지 알
+    도리가 없어서, 첫 노드를 만들기 전부터 search_nodes 로 중복을 확인한다 —
+    빈 그래프에서는 항상 빈 결과라 스텝만 쓴다. 상태를 알면 그 확인을 건너뛰고,
+    이 실행에서 자기가 만든 노드와 겹치는지 볼 때만 검색한다.
+    """
+    store = tool_module.STORE
+    if not store.graph.nodes:
+        state = "현재 지식그래프는 비어 있다. 이 실행이 첫 노드를 만든다."
+    else:
+        state = (
+            f"현재 지식그래프에 노드 {len(store.graph.nodes)}개, "
+            f"단원 {len(store.graph.chapters)}개가 이미 있다. "
+            "겹치는 개념은 search_nodes 로 확인하고 중복으로 만들지 마라."
+        )
+    return f"{state}\n\n강의안 id: {lecture_id}\n\n{text}"
+
+
 def render_conversation(conv: Conversation) -> str:
     """대화를 모델 입력으로 편다. 턴 인덱스를 남겨야 근거 인용이 가능하다."""
     lines = [render_chapters(), f"대화 id: {conv.id}", f"제목: {conv.title}", ""]
@@ -362,10 +389,10 @@ async def run_lecture(text: str, lecture_id: str, writer: StreamWriter) -> None:
         "note",
         result_summary=(
             f"강의안 실행 시작 — model={MODEL} mode={MODE} "
-            f"max_steps={MAX_STEPS} chars={len(text)}"
+            f"max_steps={MAX_STEPS_LECTURE} chars={len(text)}"
         ),
     )
-    await _drive(build_lecture_agent(), f"강의안 id: {lecture_id}\n\n{text}", writer)
+    await _drive(build_lecture_agent(), render_lecture(text, lecture_id), writer, MAX_STEPS_LECTURE)
 
 
 async def run(conv: Conversation, writer: StreamWriter) -> None:
@@ -384,12 +411,14 @@ async def run(conv: Conversation, writer: StreamWriter) -> None:
     await _drive(build_agent(), render_conversation(conv), writer)
 
 
-async def _drive(agent: Agent, model_input: str, writer: StreamWriter) -> None:
+async def _drive(
+    agent: Agent, model_input: str, writer: StreamWriter, max_steps: int = MAX_STEPS
+) -> None:
     """SDK 스트림을 계약 C 로 옮긴다. 강의안 실행과 대화 실행이 공유한다."""
     result = Runner.run_streamed(
         agent,
         input=model_input,
-        max_turns=MAX_STEPS,
+        max_turns=max_steps,
     )
 
     # call_id -> tool_name. 결과를 못 본 호출이 곧 "미처리"다.
@@ -466,7 +495,7 @@ async def _drive(agent: Agent, model_input: str, writer: StreamWriter) -> None:
         flush(None)
         payload = LimitPayload(
             steps_used=result.current_turn,
-            max_steps=MAX_STEPS,
+            max_steps=max_steps,
             unprocessed=len(pending),
             unprocessed_tools=sorted(pending.values()),
         )
