@@ -80,6 +80,16 @@ class GraphStore:
             self.graph.model_dump_json(indent=2), encoding=WRITE_ENCODING
         )
 
+    def clear(self) -> None:
+        """완전히 빈 그래프로 만든다. 강의안 실행의 출발점이다.
+
+        reset() 은 손으로 만든 시드 22개로 되돌리지만, 강의안에서 그래프를
+        만들 때는 그 시드가 오히려 방해가 된다 — 모델이 이미 있는 노드를
+        재사용해버려 강의안 기반으로 만들었는지 알 수 없다.
+        """
+        self.graph = Graph()
+        self.save()
+
     def reset(self) -> None:
         """시드 그래프로 되돌린다. 데모를 다시 돌릴 때 쓴다."""
         self.path.parent.mkdir(parents=True, exist_ok=True)

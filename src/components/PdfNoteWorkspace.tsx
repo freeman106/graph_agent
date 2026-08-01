@@ -8,6 +8,10 @@ interface Props {
   onClose: () => void;
   onImportPdf: (file: File) => void;
   onRestoreDefault: () => void;
+  /** 실제 실행이 가능한 개발 서버인지. 아니면 버튼을 감춘다 */
+  canRun: boolean;
+  running: boolean;
+  onBuildGraph: (text: string) => void;
 }
 
 export default function PdfNoteWorkspace({
@@ -17,6 +21,9 @@ export default function PdfNoteWorkspace({
   onClose,
   onImportPdf,
   onRestoreDefault,
+  canRun,
+  running,
+  onBuildGraph,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -105,7 +112,18 @@ export default function PdfNoteWorkspace({
                   <span className="text-[#aaa59b]">→</span>
                   <div className="border border-[#d3cec4] bg-white px-3 py-4"><div className="font-mono-term text-[8px] font-black text-[#8c877d]">02</div><div className="mt-1 text-[10px] font-black">원문 추출</div></div>
                   <span className="text-[#aaa59b]">→</span>
-                  <div className="border border-dashed border-[#9fb5ca] bg-[#f6f9fb] px-3 py-4"><div className="font-mono-term text-[8px] font-black text-[#255c99]">NEXT</div><div className="mt-1 text-[10px] font-black text-[#255c99]">모델 입력</div></div>
+                  {canRun && note ? (
+                    <button
+                      onClick={() => onBuildGraph(note.extractedText)}
+                      disabled={running}
+                      className="border border-[#255c99] bg-[#255c99] px-3 py-4 text-left text-white transition hover:bg-[#1d4a7d] disabled:opacity-50"
+                    >
+                      <div className="font-mono-term text-[8px] font-black text-[#bcd6ee]">RUN</div>
+                      <div className="mt-1 text-[10px] font-black">{running ? '그래프 만드는 중…' : '이 강의안으로 그래프 만들기'}</div>
+                    </button>
+                  ) : (
+                    <div className="border border-dashed border-[#9fb5ca] bg-[#f6f9fb] px-3 py-4"><div className="font-mono-term text-[8px] font-black text-[#255c99]">NEXT</div><div className="mt-1 text-[10px] font-black text-[#255c99]">모델 입력</div></div>
+                  )}
                 </div>
               </>
             ) : (

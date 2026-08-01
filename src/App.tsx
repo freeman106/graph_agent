@@ -1,16 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { RELATION_LABEL, type Node } from '../contract/schema';
+import { RELATION_LABEL, type Chapter, type Edge, type Node } from '../contract/schema';
 import Graph from './components/Graph';
 import Legend from './components/Legend';
 import NodeDetail from './components/NodeDetail';
+import NoteWorkspace from './components/NoteWorkspace';
 import PdfNoteWorkspace from './components/PdfNoteWorkspace';
 import StudyPlanWorkspace from './components/StudyPlanWorkspace';
 import StreamPanel from './components/StreamPanel';
 import { LECTURE_NOTE_SECTIONS, NOTE_COMMENTS, NOTE_INSERTIONS } from './lectureNote';
 import { NODE_LAYOUT, placeNewNode, type Point } from './layout';
 import { extractPdfNote, loadDefaultPdfNote, type PdfNoteDocument } from './pdfNote';
+import { buildNoteBundle } from './graphNote';
 import {
   CONVERSATION_META,
+  INITIAL_GRAPH,
   DETECTED_COMMENT,
   INITIAL_EDGES,
   INITIAL_NODES,
@@ -21,20 +24,37 @@ import {
   TOOL_STEPS,
   WEAKPOINT_NODE_ID,
 } from './mock';
-import { fetchGraph, probeAgent, runAgent, toStreamLine, type AgentStatus } from './agentApi';
-import type { RuntimeEdge, RuntimeNode, StreamLine, StreamLineKind } from './view';
+import { fetchGraph, probeAgent, runAgent, runLecture, toStreamLine, type AgentStatus } from './agentApi';
+import type { RuntimeEdge, RuntimeNode, RuntimeNoteComment, StreamLine, StreamLineKind } from './view';
 
 type Phase = 'idle' | 'running' | 'done';
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, Math.round(ms * 0.42)));
 
-function withLayout(nodes: Node[]): RuntimeNode[] {
-  return nodes.map((node) => ({
-    ...node,
-    status: node.status === 'weak' ? 'learned' : node.status,
-    comments: [],
-    ...(NODE_LAYOUT[node.id] ?? { x: 0, y: 0 }),
-  }));
+function withLayout(nodes: Node[], edges: Edge[] = INITIAL_EDGES): RuntimeNode[] {
+  // NODE_LAYOUT 은 손으로 잡은 시드 좌표라 강의안이 만든 노드는 들어 있지 않다.
+  // 좌표가 없으면 (0,0) 에 쌓이므로, 이웃을 보고 자리를 잡아 준다.
+  const placed: Record<string, Point> = {};
+  for (const node of nodes) {
+    const fixed = NODE_LAYOUT[node.id];
+    if (fixed) placed[node.id] = fixed;
+  }
+  return nodes.map((node) => {
+    let point = placed[node.id];
+    if (!point) {
+      const anchors = edges
+        .filter((edge) => edge.from_id === node.id || edge.to_id === node.id)
+        .map((edge) => (edge.from_id === node.id ? edge.to_id : edge.from_id));
+      point = placeNewNode(node.id, anchors, placed);
+      placed[node.id] = point;
+    }
+    return {
+      ...node,
+      status: node.status === 'weak' ? 'learned' : node.status,
+      comments: [],
+      ...point,
+    };
+  });
 }
 
 function pointsOf(nodes: RuntimeNode[]): Record<string, Point> {
@@ -65,9 +85,14 @@ export default function App() {
   const [mapFilter, setMapFilter] = useState('all');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [noteMode, setNoteMode] = useState(false);
+  const [docNote, setDocNote] = useState(false);
+  const [activeNoteAnchor, setActiveNoteAnchor] = useState('');
+  const [noteNavigationVersion, setNoteNavigationVersion] = useState(0);
   const [studyMode, setStudyMode] = useState(false);
-  const [noteComments, setNoteComments] = useState(() => NOTE_COMMENTS.map((comment) => ({ ...comment, kind: 'agent' as const, highlighted: true, archived: false })));
+  const [noteComments, setNoteComments] = useState<RuntimeNoteComment[]>(() => NOTE_COMMENTS.map((comment) => ({ ...comment, kind: 'agent' as const, highlighted: true, archived: false })));
   const [noteContent, setNoteContent] = useState<Record<string, string>>(() => initialNoteContent());
+  // dev:live 로 띄우면 INITIAL_GRAPH 가 곧 실제 실행 결과다.
+  const [chapters, setChapters] = useState<Chapter[]>(() => INITIAL_GRAPH.chapters ?? []);
   const [pdfNote, setPdfNote] = useState<PdfNoteDocument | null>(null);
   const [pdfLoading, setPdfLoading] = useState(true);
   const [pdfError, setPdfError] = useState<string | null>(null);
@@ -124,6 +149,18 @@ export default function App() {
     return () => observer.disconnect();
   }, []);
 
+  // 강의안이 만든 문서가 있으면 그것으로 노트를 엮는다. 없으면 null 이라 목 노트가 그려진다.
+  const noteBundle = useMemo(
+    () =>
+      nodes.some((node) => node.document.trim())
+        ? buildNoteBundle(chapters, nodes, pdfNote?.title ?? '강의노트')
+        : null,
+    [chapters, nodes, pdfNote],
+  );
+
+  // 노트가 열리면(PDF든 문서든) 그래프는 미니맵으로 접힌다.
+  const noteLayout = noteMode || docNote;
+
   const push = useCallback((kind: StreamLineKind, text: string) => {
     const id = ++lineId.current;
     setLines((previous) => [...previous, { id, kind, text }]);
@@ -161,10 +198,41 @@ export default function App() {
     setMinimapPosition({ x: 12, y: 12 });
   };
 
+  const navigateInNote = (nodeId: string, anchorId: string) => {
+    setSelectedId(nodeId);
+    setActiveNoteAnchor(anchorId);
+    setNoteNavigationVersion((value) => value + 1);
+  };
+
+  const updateNoteContent = (paragraphId: string, body: string) =>
+    setNoteContent((previous) => ({ ...previous, [paragraphId]: body }));
+
+  const addNoteComment = (comment: RuntimeNoteComment) =>
+    setNoteComments((previous) => [...previous, comment]);
+
+  const toggleCommentHighlight = (commentId: string, highlighted: boolean) =>
+    setNoteComments((previous) =>
+      previous.map((comment) => (comment.id === commentId ? { ...comment, highlighted } : comment)),
+    );
+
+  const updateNoteComment = (commentId: string, title: string, body: string) =>
+    setNoteComments((previous) =>
+      previous.map((comment) => (comment.id === commentId ? { ...comment, title, body } : comment)),
+    );
+
+  const archiveComment = (commentId: string, archived: boolean) =>
+    setNoteComments((previous) =>
+      previous.map((comment) => (comment.id === commentId ? { ...comment, archived } : comment)),
+    );
+
+  const deleteNoteComment = (commentId: string) =>
+    setNoteComments((previous) => previous.filter((comment) => comment.id !== commentId));
+
   const openNote = (nodeId: string) => {
     setStudyMode(false);
     setSelectedId(nodeId);
-    setNoteMode(true);
+    setActiveNoteAnchor(noteBundle?.anchorOf[nodeId] ?? '');
+    setDocNote(true);
   };
 
   const toggleWeakpoint = (nodeId: string, index: number, checked: boolean) => {
@@ -239,6 +307,52 @@ export default function App() {
   };
 
   /**
+   * 강의안으로 그래프를 처음부터 만든다. 빈 그래프에서 시작하므로 화면도 비우고 연다.
+   * 대화 실행과 달리 기존 노드를 남기지 않는다 — 강의안 기반인지 확인할 수 없게 되기 때문.
+   */
+  const buildGraphFromLecture = async (text: string) => {
+    const token = ++runToken.current;
+    const alive = () => runToken.current === token;
+
+    setNoteMode(false);
+    setStudyMode(false);
+    setNodes([]);
+    setEdges([]);
+    setLines([]);
+    setSelectedId(null);
+    setPhase('running');
+    setActiveStep(-1);
+    push('system', `강의안 ${text.length.toLocaleString()}자 → 빈 그래프에서 시작`);
+    push('system', `실제 실행 — OpenAI API (키 …${agent.keyTail ?? ''})`);
+
+    let step = -1;
+    await runLecture(text, {
+      onEvent: (event) => {
+        if (!alive()) return;
+        if (event.kind === 'decision') setActiveStep(++step);
+        const line = toStreamLine(event);
+        if (line) push(line.kind, line.text);
+      },
+      onDone: () => {
+        if (!alive()) return;
+        void fetchGraph().then((graph) => {
+          if (!alive() || !graph) return;
+          setNodes(withLayout(graph.nodes, graph.edges).map((node) => ({ ...node, isNew: true })));
+          setEdges(graph.edges.map((edge) => ({ ...edge })));
+          setChapters(graph.chapters);
+          setPhase('done');
+          push('system', `강의안 반영 완료 — 노드 ${graph.nodes.length}개 / 간선 ${graph.edges.length}개 / 단원 ${graph.chapters.length}개`);
+        });
+      },
+      onError: (message) => {
+        if (!alive()) return;
+        push('system', `실행 실패 — ${message}`);
+        setPhase('done');
+      },
+    });
+  };
+
+  /**
    * 실제 에이전트 실행. 개발 서버에 키가 있을 때만 이 경로로 온다.
    *
    * 파이프라인 칸은 decision 이 올 때마다 하나씩 올린다 — 모델이 턴을 나누는
@@ -282,6 +396,7 @@ export default function App() {
             });
           });
           setEdges(graph.edges.map((edge) => ({ ...edge })));
+          setChapters(graph.chapters);
           setPhase('done');
           push('system', `실행 완료 — 노드 ${graph.nodes.length}개 / 간선 ${graph.edges.length}개`);
         });
@@ -540,6 +655,27 @@ export default function App() {
 
       <div className="flex min-h-0 flex-1">
         <main ref={workspaceRef} className="workspace-surface relative flex min-w-0 flex-1 flex-col overflow-hidden bg-[#f7f5ef]">
+          {docNote && noteBundle && (
+            <NoteWorkspace
+              activeAnchorId={activeNoteAnchor}
+              annotationsVisible
+              comments={noteComments}
+              edges={edges}
+              navigationVersion={noteNavigationVersion}
+              noteContent={{ ...noteBundle.noteContent, ...noteContent }}
+              nodes={nodes}
+              onClose={() => setDocNote(false)}
+              onArchiveComment={archiveComment}
+              onCreateComment={(comment) => addNoteComment(comment)}
+              onDeleteComment={deleteNoteComment}
+              onNavigate={navigateInNote}
+              onToggleCommentHighlight={toggleCommentHighlight}
+              onUpdateComment={updateNoteComment}
+              onUpdateNoteContent={updateNoteContent}
+              bundle={noteBundle}
+            />
+          )}
+
           {noteMode && (
             <PdfNoteWorkspace
               error={pdfError}
@@ -548,14 +684,17 @@ export default function App() {
               onClose={() => setNoteMode(false)}
               onImportPdf={(file) => void importPdf(file)}
               onRestoreDefault={() => void restoreDefaultPdf()}
+              canRun={agent.available}
+              running={phase === 'running'}
+              onBuildGraph={(text) => void buildGraphFromLecture(text)}
             />
           )}
 
           {studyMode && <StudyPlanWorkspace edges={edges} nodes={nodes} noteContent={noteContent} onClose={() => setStudyMode(false)} />}
 
           <section
-            className={`graph-surface graph-stage z-40 overflow-hidden bg-[#f7f5ef] ${noteMode ? 'graph-stage-note border border-[#262624] shadow-[8px_8px_0_rgba(38,38,36,0.15)]' : ''} ${studyMode ? 'pointer-events-none opacity-0' : ''} ${isMinimapDragging ? 'graph-stage-dragging' : ''}`}
-            style={noteMode ? { left: minimapPosition.x, top: minimapPosition.y } : undefined}
+            className={`graph-surface graph-stage z-40 overflow-hidden bg-[#f7f5ef] ${noteLayout ? 'graph-stage-note border border-[#262624] shadow-[8px_8px_0_rgba(38,38,36,0.15)]' : ''} ${studyMode ? 'pointer-events-none opacity-0' : ''} ${isMinimapDragging ? 'graph-stage-dragging' : ''}`}
+            style={noteLayout ? { left: minimapPosition.x, top: minimapPosition.y } : undefined}
           >
             <div
               onPointerDown={startMinimapDrag}
@@ -563,14 +702,14 @@ export default function App() {
               onPointerUp={endMinimapDrag}
               onPointerCancel={endMinimapDrag}
               onLostPointerCapture={() => { minimapDragRef.current = null; setIsMinimapDragging(false); }}
-              className={`absolute top-0 right-0 left-0 z-20 flex touch-none items-center border-b border-[#d7d3ca] bg-[#f7f5ef]/95 transition-all ${noteMode ? `h-[42px] select-none px-3 ${isMinimapDragging ? 'cursor-grabbing' : 'cursor-grab'}` : 'h-[58px] px-5'}`}
+              className={`absolute top-0 right-0 left-0 z-20 flex touch-none items-center border-b border-[#d7d3ca] bg-[#f7f5ef]/95 transition-all ${noteLayout ? `h-[42px] select-none px-3 ${isMinimapDragging ? 'cursor-grabbing' : 'cursor-grab'}` : 'h-[58px] px-5'}`}
             >
-              {noteMode && <span className="mr-2 text-[13px] tracking-[-0.15em] text-[#9a958b]" aria-hidden="true">⠿</span>}
+              {noteLayout && <span className="mr-2 text-[13px] tracking-[-0.15em] text-[#9a958b]" aria-hidden="true">⠿</span>}
               <div>
-                <div className={`${noteMode ? 'text-[8px]' : 'text-[10px]'} font-black tracking-[0.16em] text-[#77736a]`}>TRANSFORMER / COGNITIVE ATLAS</div>
-                <div className={`${noteMode ? 'mt-0.5 text-[8px]' : 'mt-1 text-[10px]'} font-mono-term text-[#9a958b]`}>{nodes.length} CONCEPTS · {edges.length} RELATIONS</div>
+                <div className={`${noteLayout ? 'text-[8px]' : 'text-[10px]'} font-black tracking-[0.16em] text-[#77736a]`}>TRANSFORMER / COGNITIVE ATLAS</div>
+                <div className={`${noteLayout ? 'mt-0.5 text-[8px]' : 'mt-1 text-[10px]'} font-mono-term text-[#9a958b]`}>{nodes.length} CONCEPTS · {edges.length} RELATIONS</div>
               </div>
-              {!noteMode && <div className="ml-auto flex items-center gap-1 border border-[#bdb8ad] bg-[#f7f5ef] p-[3px]">
+              {!noteLayout && <div className="ml-auto flex items-center gap-1 border border-[#bdb8ad] bg-[#f7f5ef] p-[3px]">
                 {[
                   ['all', '전체'],
                   ['weak', '막힌 지점'],
@@ -600,7 +739,7 @@ export default function App() {
                   {isFullscreen ? '× 전체 화면 종료' : '⛶ 전체 화면'}
                 </button>
               </div>}
-              {noteMode && selectedNode && (
+              {noteLayout && selectedNode && (
                 <div className="ml-auto flex max-w-[145px] items-center gap-2">
                   <span className="h-2 w-2 shrink-0 bg-[#255c99]" />
                   <span className="truncate text-[9px] font-black text-[#3c3a36]">{selectedNode.name}</span>
@@ -608,10 +747,10 @@ export default function App() {
               )}
             </div>
 
-            <div className={`absolute inset-0 ${noteMode ? 'top-[42px]' : 'top-[58px]'}`}>
-              <Graph nodes={nodes} edges={edges} selectedId={selectedId} noteIds={noteIds} filter={mapFilter} onSelect={selectFromGraph} compact={noteMode} />
-              {!noteMode && <Legend />}
-              {selectedNode && !noteMode && (
+            <div className={`absolute inset-0 ${noteLayout ? 'top-[42px]' : 'top-[58px]'}`}>
+              <Graph nodes={nodes} edges={edges} selectedId={selectedId} noteIds={noteIds} filter={mapFilter} onSelect={selectFromGraph} compact={noteLayout} />
+              {!noteLayout && <Legend />}
+              {selectedNode && !noteLayout && (
                 <NodeDetail
                   node={selectedNode}
                   nodes={nodes}
@@ -627,7 +766,7 @@ export default function App() {
             </div>
           </section>
 
-          <section className={`absolute right-0 bottom-0 left-0 shrink-0 overflow-hidden border-t border-[#262624] bg-[#efebe2] px-5 transition-all duration-500 ${noteMode || studyMode ? 'pointer-events-none h-0 border-transparent py-0 opacity-0' : 'h-[154px] py-4 opacity-100'}`}>
+          <section className={`absolute right-0 bottom-0 left-0 shrink-0 overflow-hidden border-t border-[#262624] bg-[#efebe2] px-5 transition-all duration-500 ${noteLayout || studyMode ? 'pointer-events-none h-0 border-transparent py-0 opacity-0' : 'h-[154px] py-4 opacity-100'}`}>
             <div className="mb-2 flex items-center">
               <div>
                 <span className="text-[10px] font-black tracking-[0.14em]">새 학습 기록</span>
@@ -652,7 +791,7 @@ export default function App() {
           </section>
         </main>
 
-        <aside className={`shrink-0 overflow-hidden border-l border-[#262624] transition-all duration-500 ${noteMode || studyMode ? 'w-0 border-transparent opacity-0' : 'w-[420px] opacity-100'}`}>
+        <aside className={`shrink-0 overflow-hidden border-l border-[#262624] transition-all duration-500 ${noteLayout || studyMode ? 'w-0 border-transparent opacity-0' : 'w-[420px] opacity-100'}`}>
           <StreamPanel lines={lines} activeStep={activeStep} phase={phase} />
         </aside>
       </div>

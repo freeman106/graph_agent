@@ -50,9 +50,21 @@ type Handlers = {
  * 청크가 이벤트 경계에서 잘려 오므로 빈 줄 기준으로 모았다 넘긴다.
  */
 export async function runAgent(text: string, handlers: Handlers): Promise<void> {
+  return runEndpoint('/api/agent/run', text, handlers);
+}
+
+/**
+ * 강의안으로 그래프의 첫 모습을 만든다. **빈 그래프에서 시작한다** —
+ * 기존 노드가 남아 있으면 모델이 그걸 재사용해 강의안 기반인지 알 수 없게 된다.
+ */
+export async function runLecture(text: string, handlers: Handlers): Promise<void> {
+  return runEndpoint('/api/agent/lecture', text, handlers);
+}
+
+async function runEndpoint(url: string, text: string, handlers: Handlers): Promise<void> {
   let res: Response;
   try {
-    res = await fetch('/api/agent/run', {
+    res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text }),

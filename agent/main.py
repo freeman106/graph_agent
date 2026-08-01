@@ -108,6 +108,155 @@ LECTURE_INSTRUCTIONS = """\
 6. 개념 사이 관계가 강의안에 드러나 있으면 link_nodes 로 이어라.
 
 7. 끝나면 무엇을 만들었는지 짧게 정리하라.
+
+문서 작성의 목표:
+
+각 document는 "이 개념을 덮고도 무엇을 설명할 수 있어야 하는가?"라는 질문에서
+출발한다. 정의를 더 짧게 줄이는 것이 아니라, 학생이 개념의 역할·작동·조건·경계를
+자기 말로 설명하게 만드는 글을 써라.
+
+문서는 보통 4~7개의 실질적인 문단으로 쓴다. 단순한 용어라도 최소 3개의 실질적
+문단을 쓴다. 다만 강의안의 근거가 부족한데 분량만 맞추기 위해 문장을 부풀리지 마라.
+강의안의 정보 밀도에 맞춰 충분하지만 군더더기 없는 길이를 선택하라.
+
+모든 문서에 같은 제목·같은 순서·같은 마무리를 반복하지 마라.
+"출발 문제 / 핵심 주장 / 내부 구조" 같은 템플릿 이름을 본문에 출력하지 마라.
+문서마다 강의안의 설명 방식과 해당 개념의 학습 병목에 맞는 자연스러운 서술 흐름을
+만들어라.
+
+예를 들어 어떤 문서는 문제 상황에서 시작해 해결 원리로 들어갈 수 있고, 어떤 문서는
+관찰되는 현상에서 시작해 그 원인을 풀 수 있으며, 어떤 문서는 구성 요소의 관계를
+먼저 보여 준 뒤 전체 역할을 설명할 수 있다. 수식이 중심인 문서는 식보다 그 식이
+답하려는 질문에서 시작할 수 있고, 역사·인문·사회 주제는 쟁점이나 주장과 근거의
+관계에서 시작할 수 있다.
+
+단, 이러한 다양성은 문체를 꾸미기 위한 것이 아니다. 강의안의 실제 내용에 가장
+잘 맞는 설명 순서를 고르기 위한 것이다.
+
+문서의 공통 품질 기준:
+
+- 첫 문단은 가능한 한 사전식 정의 대신 문제, 현상, 질문, 대조, 또는 핵심 역할로
+  독자를 해당 개념 안으로 이끈다. 단, 그 출발점은 반드시 강의안에 근거해야 한다.
+- 각 문단은 하나의 역할을 맡는다. 같은 말을 다른 표현으로 반복하지 마라.
+- 문단과 문단 사이에는 원인, 대조, 결과, 조건, 확대 같은 논리적 연결이 읽혀야 한다.
+- 전문 용어는 처음 등장할 때 문맥 안에서 역할을 드러내라.
+- "중요하다", "핵심이다", "효율적이다"라고만 쓰지 말고 무엇에 대해 왜 그런지 쓴다.
+- 불릿 목록, 표, 용어 사전, 슬라이드 제목의 연속으로 문서를 만들지 마라.
+- "강의안에 따르면", "이 문서에서는", "요약하면" 같은 메타 표현을 반복하지 마라.
+- 노드명은 UI에 이미 보이므로 본문 첫 줄에 제목을 반복하지 마라.
+- 마지막에는 학생이 원문 없이 답할 수 있는 확인 질문을 1~2개 남길 수 있다.
+  단, 모든 문서를 똑같이 "스스로 확인"이라는 제목으로 끝내지 말고,
+  본문 흐름에 어울리는 방식으로 자연스럽게 배치하라.
+- 확인 질문 역시 강의안에 있는 내용만으로 답할 수 있어야 한다.
+
+주 서술 방식 선택:
+
+각 노드에서 학생이 가장 먼저 해결해야 할 학습 질문 하나를 정하고,
+아래 방식 중 하나를 주 서술 방식으로 선택하라.
+한 문서에 모든 방식을 기계적으로 섞지 마라.
+가장 많은 내용을 담는 방식이 아니라, 이 개념을 이해할 때 가장 큰 병목을
+해소하는 방식을 선택하라.
+
+A. 개념 모델형
+적용: "이것은 무엇이며 왜 필요한가?"가 핵심인 경우.
+활용: 문제 또는 역할 → 핵심 개념 → 구성 요소나 관점 → 적용 범위 또는 경계.
+주의: 정의와 구성 요소를 나열하는 데 그치지 말고, 각 요소가 전체에서 왜 필요한지
+설명한다.
+
+B. 인과·메커니즘형
+적용: "무엇이 어떤 과정을 거쳐 무엇을 바꾸는가?"가 핵심인 경우.
+활용: 시작 상태 → 변화의 계기 → 핵심 과정 → 결과 → 병목·비용·제약.
+주의: 단계 번호만 나열하지 말고, 한 변화가 다음 변화를 낳는 이유를 연결한다.
+
+C. 구조·계층형
+적용: 여러 부분이 관계를 맺어 하나의 체계를 이루는 경우.
+활용: 전체 역할 → 구성 부분의 책임 → 부분 간 흐름 또는 연결 → 전체에서 생기는 성질.
+주의: 하위 노드의 본문을 반복하지 말고, 이 노드에서만 보이는 구조적 관계를 다룬다.
+
+D. 절차·실행형
+적용: 방법, 알고리즘, 실험, 진단, 수행 순서가 핵심인 경우.
+활용: 목표와 시작 조건 → 단계와 각 단계의 이유 → 중간 확인 → 실패 또는 예외 조건.
+주의: 강의 슬라이드의 순서를 베끼지 말고, 학생이 실제로 순서를 재현할 수 있게 쓴다.
+
+E. 수량·수식 해석형
+적용: 수식·변수·확률·측정 관계가 핵심인 경우.
+활용: 수식이 답하는 질문 → 항과 기호의 역할 → 값 변화의 의미 → 가정과 경계 사례.
+주의: 수식을 복사한 뒤 "계산한다"라고 끝내지 말고, 관계가 의미하는 변화를 설명한다.
+
+F. 주장·근거·해석형
+적용: 주장, 해석, 법리, 역사적 관점, 사회과학적 설명이 핵심인 경우.
+활용: 쟁점 → 중심 주장 → 강의안의 근거와 논리 → 성립 조건 또는 경쟁 관점 → 의미.
+주의: 강의안에 없는 반론이나 해석을 임의로 만들지 말고, 사실과 해석을 구별한다.
+
+G. 사례·응용·설계형
+적용: "언제 이 방법을 쓰며 무엇을 얻고 잃는가?"가 핵심인 경우.
+활용: 문제 신호 → 선택 이유 → 작동 방식 → 트레이드오프 → 부적절한 조건.
+주의: 서로 보완적인 개념을 대체재처럼 다루지 말고, 실제 선택 관계가 있을 때만
+선택 기준을 쓴다.
+
+H. 변화·발전형
+적용: 시간적 변화, 상태 전이, 단계적 발전이 핵심인 경우.
+활용: 초기 상태 → 변화 동인 → 전환점 → 이후 상태 → 지속되는 요소와 변한 요소.
+주의: 시간 순서가 곧 인과관계라고 과장하지 마라.
+
+선택 보조 절:
+
+주 서술 방식만으로 이해가 부족할 때만 아래 요소를 짧게 사용한다.
+보조 절은 별도 카드가 아니라 문서 흐름 속의 한 문단 또는 몇 문장이다.
+
+- 같은 계열에서의 위치:
+  실제로 같은 문제를 푸는 변형·대안이 있을 때만 사용한다.
+  대주제 노트는 없으므로 비교가 필요하면 각 소주제 문서 안에서
+  "현재 개념이 같은 계열에서 어디에 놓이는가"를 설명한다.
+  현재 개념의 역할을 중심으로 쓰고, 비교 자체가 본문을 압도하게 하지 마라.
+
+- 혼동 방지:
+  비슷한 이름이나 기능 때문에 혼동될 수 있지만 실제로는 다른 층위·다른 역할인
+  개념이 있을 때만 사용한다.
+  "둘 중 무엇을 고를까?"가 아니라 "왜 같은 것이 아닌가?"를 짧게 설명한다.
+
+- 범위와 예외:
+  적용 조건, 전제, 한계가 해당 개념을 이해하는 데 핵심일 때만 사용한다.
+
+- 증거 읽기:
+  강의안의 그래프, 표, 실험, 사료, 사례가 핵심 근거일 때만 사용한다.
+  자료가 직접 보여 주는 것과 보여 주지 않는 것을 구분한다.
+
+- 용어 구분:
+  비슷한 단어가 실제 판단 차이를 만들 때만 사용한다.
+  단순 동의어 목록을 만들지 마라.
+
+- 학습자 오해와 정정:
+  이후 대화에서 실제 약점이 발견됐을 때만 Comment와 Weakpoint로 붙인다.
+  강의안 단계에서 가상의 오개념을 만들어 넣지 마라.
+
+문서를 지루하지 않고 사람의 해설처럼 만들기 위한 규칙:
+
+- 매번 같은 문장으로 시작하거나 끝내지 마라.
+- 모든 문단 길이를 똑같이 맞추지 마라. 핵심 전환점에는 충분한 설명을 쓰고,
+  연결 문단은 짧고 선명하게 쓴다.
+- 설명의 중심을 개념마다 다르게 잡아라. 어떤 노트는 "왜 필요한가",
+  어떤 노트는 "무엇이 바뀌는가", 어떤 노트는 "무엇을 구별해야 하는가"가
+  중심이 될 수 있다.
+- 같은 사실을 정의, 예시, 결론으로 세 번 반복하지 마라.
+- 독자를 과장되게 격려하거나 교과서식 상투어를 반복하지 마라.
+- 자연스러운 연결어를 사용하되, "따라서", "즉", "예를 들어"를 습관적으로
+  반복하지 마라.
+- 화려한 비유보다 정확한 관계를 우선한다. 비유는 강의안이 이미 제공했고
+  개념 이해에 실제 도움이 될 때만 사용한다.
+- 문서를 읽은 학생이 "정보를 많이 봤다"가 아니라
+  "이 개념이 왜 이런 모양인지 이해했다"라고 느끼게 하라.
+
+create_node 직전 최종 확인:
+
+- document의 모든 사실은 강의안에서 근거를 찾을 수 있는가?
+- summary는 짧고 document는 충분히 다른 역할을 하는가?
+- 이 문서의 주 서술 방식은 하나로 분명한가?
+- 비교·예외·사례는 실제로 필요하고 강의안에 있는가?
+- 다른 노드의 문서와 같은 문장 구조나 같은 표현을 기계적으로 반복하지 않았는가?
+- 학생이 이 문서만 읽고 이 노드의 핵심 질문에 답할 수 있는가?
+
+위 조건을 만족할 때만 create_node를 호출하라.
 """
 
 # 실행 종류에 따라 툴 목록이 다르다.
@@ -157,6 +306,16 @@ def build_agent() -> Agent:
     )
 
 
+def build_lecture_agent() -> Agent:
+    """강의안 실행 전용. 단원/소주제를 만들 수 있고 대화 인용 툴은 없다."""
+    return Agent(
+        name="knowledge-graph-lecture-agent",
+        instructions=LECTURE_INSTRUCTIONS,
+        tools=LECTURE_TOOLS,
+        model=MODEL,
+    )
+
+
 def render_chapters() -> str:
     """기존 단원/소주제 목록. 모델이 분류하려면 뭐가 있는지 봐야 한다.
 
@@ -189,8 +348,30 @@ def render_conversation(conv: Conversation) -> str:
 # ════════════════════════════════════════════════════════════════
 
 
+async def run_lecture(text: str, lecture_id: str, writer: StreamWriter) -> None:
+    """강의안 하나로 그래프의 첫 모습을 만든다.
+
+    대화 실행과 스트림 변환은 완전히 같다. 다른 것은 프롬프트와 툴 목록,
+    그리고 만들어지는 노드의 origin 뿐이다.
+    """
+    tool_module.CURRENT_LECTURE_ID = lecture_id
+    tool_module.CURRENT_CONVERSATION_ID = None
+    tool_module.CURRENT_ORIGIN = "lecture"
+
+    writer.emit(
+        "note",
+        result_summary=(
+            f"강의안 실행 시작 — model={MODEL} mode={MODE} "
+            f"max_steps={MAX_STEPS} chars={len(text)}"
+        ),
+    )
+    await _drive(build_lecture_agent(), f"강의안 id: {lecture_id}\n\n{text}", writer)
+
+
 async def run(conv: Conversation, writer: StreamWriter) -> None:
     tool_module.CURRENT_CONVERSATION_ID = conv.id
+    tool_module.CURRENT_LECTURE_ID = None
+    tool_module.CURRENT_ORIGIN = "conversation"
 
     writer.emit(
         "note",
@@ -200,10 +381,14 @@ async def run(conv: Conversation, writer: StreamWriter) -> None:
         ),
     )
 
-    agent = build_agent()
+    await _drive(build_agent(), render_conversation(conv), writer)
+
+
+async def _drive(agent: Agent, model_input: str, writer: StreamWriter) -> None:
+    """SDK 스트림을 계약 C 로 옮긴다. 강의안 실행과 대화 실행이 공유한다."""
     result = Runner.run_streamed(
         agent,
-        input=render_conversation(conv),
+        input=model_input,
         max_turns=MAX_STEPS,
     )
 
@@ -445,26 +630,47 @@ def main() -> int:
         action="store_true",
         help="사람이 읽는 출력 대신 계약 C 이벤트를 JSONL 로 stdout 에 흘린다",
     )
+    parser.add_argument(
+        "--lecture",
+        type=Path,
+        help="강의안 텍스트 파일. 주면 강의안 실행(단원·소주제·문서 생성)을 한다",
+    )
+    parser.add_argument(
+        "--empty",
+        action="store_true",
+        help="시드가 아니라 빈 그래프에서 시작한다. 강의안 실행의 출발점",
+    )
     args = parser.parse_args()
 
-    if args.reset:
+    if args.empty:
+        tool_module.STORE.clear()
+        if not args.stream_json:
+            print(f"빈 그래프에서 시작합니다: {GRAPH_PATH}")
+    elif args.reset:
         tool_module.STORE.reset()
         if not args.stream_json:
             print(f"그래프를 시드로 되돌렸습니다: {GRAPH_PATH}")
 
-    if args.conversation_text is not None:
-        conv = parse_pasted(args.conversation_text.read_text(encoding=READ_ENCODING))
-    else:
-        conv = load_conversation(args.conversation)
     before = len(tool_module.STORE.graph.nodes)
 
-    with StreamWriter(
-        show_raw=args.raw, jsonl_path=LAST_RUN_PATH, json_stdout=args.stream_json
-    ) as writer:
-        if args.offline:
-            run_offline(conv, writer)
+    if args.lecture is not None:
+        text = args.lecture.read_text(encoding=READ_ENCODING)
+        with StreamWriter(
+            show_raw=args.raw, jsonl_path=LAST_RUN_PATH, json_stdout=args.stream_json
+        ) as writer:
+            asyncio.run(run_lecture(text, args.lecture.stem, writer))
+    else:
+        if args.conversation_text is not None:
+            conv = parse_pasted(args.conversation_text.read_text(encoding=READ_ENCODING))
         else:
-            asyncio.run(run(conv, writer))
+            conv = load_conversation(args.conversation)
+        with StreamWriter(
+            show_raw=args.raw, jsonl_path=LAST_RUN_PATH, json_stdout=args.stream_json
+        ) as writer:
+            if args.offline:
+                run_offline(conv, writer)
+            else:
+                asyncio.run(run(conv, writer))
 
     store = tool_module.STORE
     after = len(store.graph.nodes)

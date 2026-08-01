@@ -66,7 +66,26 @@ export function agentApi() {
         }
       });
 
-      server.middlewares.use('/api/agent/run', async (req, res) => {
+      // 강의안 실행 — 빈 그래프에서 시작해 단원·소주제·노드·문서를 만든다.
+      // 대화 실행과 배관이 같아 같은 핸들러를 쓰고 인자만 다르게 준다.
+      server.middlewares.use('/api/agent/lecture', (req, res) =>
+        runAgent(req, res, (textPath) => [
+          '--stream-json',
+          '--empty',
+          '--lecture',
+          textPath,
+        ]),
+      );
+
+      server.middlewares.use('/api/agent/run', (req, res) =>
+        runAgent(req, res, (textPath) => [
+          '--stream-json',
+          '--conversation-text',
+          textPath,
+        ]),
+      );
+
+      async function runAgent(req, res, buildArgs) {
         const send = (event) => res.write(`data: ${JSON.stringify(event)}\n\n`);
 
         const state = probe();
@@ -110,7 +129,7 @@ export function agentApi() {
         running = true;
         const child = spawn(
           venvPython(),
-          ['-X', 'utf8', '-m', 'agent.main', '--stream-json', '--conversation-text', textPath],
+          ['-X', 'utf8', '-m', 'agent.main', ...buildArgs(textPath)],
           { cwd: ROOT, env: pythonEnv() },
         );
 
@@ -149,7 +168,7 @@ export function agentApi() {
           if (!child.killed) child.kill();
           running = false;
         });
-      });
+      }
     },
   };
 }

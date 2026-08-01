@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { RELATION_LABEL } from '../../contract/schema';
-import { anchorForNode, LECTURE_NOTE_MAJOR_SECTIONS, LECTURE_NOTE_META, LECTURE_NOTE_SECTIONS, NOTE_INSERTIONS } from '../lectureNote';
+import { anchorForNode as defaultAnchorForNode, LECTURE_NOTE_MAJOR_SECTIONS as DEFAULT_MAJORS, LECTURE_NOTE_META as DEFAULT_META, LECTURE_NOTE_SECTIONS as DEFAULT_SECTIONS, NOTE_INSERTIONS as DEFAULT_INSERTIONS } from '../lectureNote';
+import type { NoteBundle } from '../graphNote';
 import type { RuntimeEdge, RuntimeNode, RuntimeNoteComment } from '../view';
 
 interface Props {
@@ -19,6 +20,8 @@ interface Props {
   onToggleCommentHighlight: (commentId: string, highlighted: boolean) => void;
   onUpdateComment: (commentId: string, title: string, body: string) => void;
   onUpdateNoteContent: (paragraphId: string, body: string) => void;
+  /** 강의안에서 만들어진 실제 문서. 없으면 기존 목 노트를 그린다. */
+  bundle?: NoteBundle | null;
 }
 
 interface SelectionDraft {
@@ -47,7 +50,16 @@ export default function NoteWorkspace({
   onToggleCommentHighlight,
   onUpdateComment,
   onUpdateNoteContent,
+  bundle = null,
 }: Props) {
+  // 실제 강의안 문서가 있으면 그걸 그리고, 없으면 기존 목 노트를 그대로 그린다.
+  const LECTURE_NOTE_META = bundle?.meta ?? DEFAULT_META;
+  const LECTURE_NOTE_MAJOR_SECTIONS = bundle?.majorSections ?? DEFAULT_MAJORS;
+  const LECTURE_NOTE_SECTIONS = bundle?.sections ?? DEFAULT_SECTIONS;
+  const NOTE_INSERTIONS = bundle?.insertions ?? DEFAULT_INSERTIONS;
+  const anchorForNode = (nodeId: string) =>
+    bundle ? (bundle.anchorOf[nodeId] ?? '') : defaultAnchorForNode(nodeId);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const articleRef = useRef<HTMLElement>(null);
   const commentCardRefs = useRef(new Map<string, HTMLElement>());
