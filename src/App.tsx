@@ -3,7 +3,9 @@ import { RELATION_LABEL, type Node } from '../contract/schema';
 import Graph from './components/Graph';
 import Legend from './components/Legend';
 import NodeDetail from './components/NodeDetail';
+import NoteWorkspace from './components/NoteWorkspace';
 import StreamPanel from './components/StreamPanel';
+import { anchorForNode, NOTE_COMMENTS } from './lectureNote';
 import { NODE_LAYOUT, placeNewNode, type Point } from './layout';
 import {
   CONVERSATION_META,
@@ -17,7 +19,7 @@ import {
   TOOL_STEPS,
   WEAKPOINT_NODE_ID,
 } from './mock';
-import type { RuntimeEdge, RuntimeNode, StreamLine, StreamLineKind } from './view';
+import type { RuntimeEdge, RuntimeNode, RuntimeNoteComment, StreamLine, StreamLineKind } from './view';
 
 type Phase = 'idle' | 'running' | 'done';
 
@@ -36,6 +38,7 @@ const NAMES = new Map<string, string>([
   ...PLACEMENTS.map((placement) => [placement.node.id, placement.node.name] as const),
 ]);
 const nameOf = (id: string) => NAMES.get(id) ?? id;
+const weakpointKey = (nodeId: string, index: number) => `${nodeId}::${index}`;
 
 export default function App() {
   const [nodes, setNodes] = useState<RuntimeNode[]>(() => withLayout(INITIAL_NODES));
@@ -47,6 +50,10 @@ export default function App() {
   const [pasted, setPasted] = useState('');
   const [mapFilter, setMapFilter] = useState('all');
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [noteMode, setNoteMode] = useState(false);
+  const [activeNoteAnchor, setActiveNoteAnchor] = useState('p-summary-1');
+  const [noteComments, setNoteComments] = useState<RuntimeNoteComment[]>(() => NOTE_COMMENTS.map((comment) => ({ ...comment })));
+  const [resolvedWeakpoints, setResolvedWeakpoints] = useState<Set<string>>(() => new Set());
 
   const lineId = useRef(0);
   const runToken = useRef(0);
@@ -63,10 +70,14 @@ export default function App() {
     setLines((previous) => [...previous, { id, kind, text }]);
   }, []);
 
-  const noteIds = useMemo(
-    () => new Set(nodes.filter((node) => node.weakpoints.length > 0).map((node) => node.id)),
-    [nodes],
-  );
+  const annotationsVisible = activeStep >= 3 || phase === 'done';
+  const noteIds = useMemo(() => {
+    const ids = new Set(nodes.filter((node) => node.weakpoints.length > 0).map((node) => node.id));
+    noteComments
+      .filter((comment) => annotationsVisible || !comment.revealOnRun)
+      .forEach((comment) => ids.add(comment.nodeId));
+    return ids;
+  }, [nodes, annotationsVisible, noteComments]);
   const selectedNode = selectedId ? (nodes.find((node) => node.id === selectedId) ?? null) : null;
   const learnedCount = nodes.filter((node) => node.status === 'learned').length;
   const weakCount = nodes.filter((node) => node.status === 'weak').length;
@@ -83,6 +94,86 @@ export default function App() {
     setActiveStep(-1);
     setPasted('');
     setMapFilter('all');
+    setNoteMode(false);
+    setActiveNoteAnchor('p-summary-1');
+    setNoteComments(NOTE_COMMENTS.map((comment) => ({ ...comment })));
+    setResolvedWeakpoints(new Set());
+  };
+
+  const openNote = (nodeId: string) => {
+    setSelectedId(nodeId);
+    setActiveNoteAnchor(anchorForNode(nodeId));
+    setNoteMode(true);
+  };
+
+  const navigateInNote = (nodeId: string, anchorId: string) => {
+    setSelectedId(nodeId);
+    setActiveNoteAnchor(anchorId);
+  };
+
+  const addNoteComment = (comment: RuntimeNoteComment, sourceText: string) => {
+    setNoteComments((previous) => [...previous, comment]);
+    setSelectedId(comment.nodeId);
+    if (comment.anchorId) setActiveNoteAnchor(comment.anchorId);
+    setNodes((previous) => previous.map((node) => {
+      if (node.id !== comment.nodeId) return node;
+      return {
+        ...node,
+        status: 'weak',
+        flash: true,
+        weakpoints: [
+          ...node.weakpoints,
+          {
+            description: `${comment.title}: ${comment.body}`,
+            misconception: null,
+            correction: null,
+            evidence: [{ index: 0, speaker: 'user', text: sourceText }],
+            source_conversation_id: `note-selection-${comment.id}`,
+          },
+        ],
+      };
+    }));
+    window.setTimeout(() => {
+      setNodes((previous) => previous.map((node) => node.flash ? { ...node, flash: false } : node));
+    }, 760);
+    push('detail', `  ✎ ${nameOf(comment.nodeId)} — 노트 선택 영역에서 새 코멘트와 막힌 지점 추가`);
+  };
+
+  const toggleWeakpoint = (nodeId: string, index: number, checked: boolean) => {
+    const next = new Set(resolvedWeakpoints);
+    const key = weakpointKey(nodeId, index);
+    if (checked) next.add(key);
+    else next.delete(key);
+    setResolvedWeakpoints(next);
+    setNodes((previous) => previous.map((node) => {
+      if (node.id !== nodeId) return node;
+      const allResolved = node.weakpoints.length > 0
+        && node.weakpoints.every((_, weakpointIndex) => next.has(weakpointKey(node.id, weakpointIndex)));
+      return { ...node, status: allResolved ? 'learned' : 'weak', flash: allResolved };
+    }));
+    if (checked) {
+      window.setTimeout(() => {
+        setNodes((previous) => previous.map((node) => node.flash ? { ...node, flash: false } : node));
+      }, 760);
+    }
+  };
+
+  const toggleLearned = (nodeId: string, checked: boolean) => {
+    setNodes((previous) => previous.map((node) => {
+      if (node.id !== nodeId) return node;
+      const hasOpenWeakpoint = node.weakpoints.some((_, index) => !resolvedWeakpoints.has(weakpointKey(node.id, index)));
+      return { ...node, status: checked ? 'learned' : hasOpenWeakpoint ? 'weak' : 'unlearned', flash: checked };
+    }));
+    if (checked) {
+      window.setTimeout(() => {
+        setNodes((previous) => previous.map((node) => node.flash ? { ...node, flash: false } : node));
+      }, 760);
+    }
+  };
+
+  const selectFromGraph = (nodeId: string | null) => {
+    setSelectedId(nodeId);
+    if (noteMode && nodeId) setActiveNoteAnchor(anchorForNode(nodeId));
   };
 
   const run = async (text: string) => {
@@ -161,6 +252,8 @@ export default function App() {
     if (!alive()) return;
     push('result', `[결과] ${s4.result}`);
     push('reason', s4.reason);
+    push('detail', '  ▣ 강의노트 관련 문장 3곳 일치 → 하이라이트와 코멘트 앵커 생성');
+    push('detail', '  □ Flash Attention — 일치 문장 없음 → 코멘트만 보존');
     for (const evidence of DETECTED_WEAKPOINT.evidence.slice(0, 2)) {
       push('detail', `  #${evidence.index} ${evidence.speaker === 'user' ? '나' : 'ChatGPT'}: ${evidence.text.slice(0, 70)}…`);
     }
@@ -189,6 +282,7 @@ export default function App() {
       await wait(340);
       if (!alive()) return;
     }
+    push('detail', '  ✎ 오른쪽 코멘트 4건 연결 · 관련 노드 이동 경로 4건 생성');
     push('result', `[결과] ${s5.result}`);
     push('reason', s5.reason);
     await wait(1300);
@@ -230,7 +324,7 @@ export default function App() {
     push('reason', s6.reason);
     await wait(700);
     if (!alive()) return;
-    push('done', `실행 완료 — 노드 ${INITIAL_NODES.length + 3}개 / 간선 ${INITIAL_EDGES.length + 8}개. 노드를 클릭하면 노트가 열립니다.`);
+    push('done', `실행 완료 — 노드 ${INITIAL_NODES.length + 3}개 / 간선 ${INITIAL_EDGES.length + 8}개. 노드 카드의 "노트에서 보기"로 근거를 확인하세요.`);
     setActiveStep(6);
     setPhase('done');
   };
@@ -279,14 +373,29 @@ export default function App() {
       </header>
 
       <div className="flex min-h-0 flex-1">
-        <main className="flex min-w-0 flex-1 flex-col bg-[#f7f5ef]">
-          <section ref={graphSurfaceRef} className="graph-surface relative min-h-0 flex-1 overflow-hidden">
-            <div className="absolute top-0 right-0 left-0 z-20 flex h-[58px] items-center border-b border-[#d7d3ca] bg-[#f7f5ef]/95 px-5">
+        <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-[#f7f5ef]">
+          {noteMode && (
+            <NoteWorkspace
+              activeAnchorId={activeNoteAnchor}
+              annotationsVisible={annotationsVisible}
+              comments={noteComments}
+              nodes={nodes}
+              onCreateComment={addNoteComment}
+              onClose={() => setNoteMode(false)}
+              onNavigate={navigateInNote}
+            />
+          )}
+
+          <section
+            ref={graphSurfaceRef}
+            className={`graph-surface graph-stage z-40 overflow-hidden bg-[#f7f5ef] ${noteMode ? 'graph-stage-note border border-[#262624] shadow-[8px_8px_0_rgba(38,38,36,0.15)]' : ''}`}
+          >
+            <div className={`absolute top-0 right-0 left-0 z-20 flex items-center border-b border-[#d7d3ca] bg-[#f7f5ef]/95 transition-all ${noteMode ? 'h-[42px] px-3' : 'h-[58px] px-5'}`}>
               <div>
-                <div className="text-[10px] font-black tracking-[0.16em] text-[#77736a]">TRANSFORMER / COGNITIVE ATLAS</div>
-                <div className="mt-1 font-mono-term text-[10px] text-[#9a958b]">{nodes.length} CONCEPTS · {edges.length} RELATIONS</div>
+                <div className={`${noteMode ? 'text-[8px]' : 'text-[10px]'} font-black tracking-[0.16em] text-[#77736a]`}>TRANSFORMER / COGNITIVE ATLAS</div>
+                <div className={`${noteMode ? 'mt-0.5 text-[8px]' : 'mt-1 text-[10px]'} font-mono-term text-[#9a958b]`}>{nodes.length} CONCEPTS · {edges.length} RELATIONS</div>
               </div>
-              <div className="ml-auto flex items-center gap-1 border border-[#bdb8ad] bg-[#f7f5ef] p-[3px]">
+              {!noteMode && <div className="ml-auto flex items-center gap-1 border border-[#bdb8ad] bg-[#f7f5ef] p-[3px]">
                 {[
                   ['all', '전체'],
                   ['weak', '막힌 지점'],
@@ -315,19 +424,35 @@ export default function App() {
                 >
                   {isFullscreen ? '× 전체 화면 종료' : '⛶ 전체 화면'}
                 </button>
-              </div>
+              </div>}
+              {noteMode && selectedNode && (
+                <div className="ml-auto flex max-w-[145px] items-center gap-2">
+                  <span className="h-2 w-2 shrink-0 bg-[#255c99]" />
+                  <span className="truncate text-[9px] font-black text-[#3c3a36]">{selectedNode.name}</span>
+                </div>
+              )}
             </div>
 
-            <div className="absolute inset-0 top-[58px]">
-              <Graph nodes={nodes} edges={edges} selectedId={selectedId} noteIds={noteIds} filter={mapFilter} onSelect={setSelectedId} />
-              <Legend />
-              {selectedNode && (
-                <NodeDetail node={selectedNode} nodes={nodes} edges={edges} onSelect={setSelectedId} onClose={() => setSelectedId(null)} />
+            <div className={`absolute inset-0 ${noteMode ? 'top-[42px]' : 'top-[58px]'}`}>
+              <Graph nodes={nodes} edges={edges} selectedId={selectedId} noteIds={noteIds} filter={mapFilter} onSelect={selectFromGraph} compact={noteMode} />
+              {!noteMode && <Legend />}
+              {selectedNode && !noteMode && (
+                <NodeDetail
+                  node={selectedNode}
+                  nodes={nodes}
+                  edges={edges}
+                  resolvedWeakpoints={resolvedWeakpoints}
+                  onSelect={setSelectedId}
+                  onOpenNote={openNote}
+                  onToggleLearned={toggleLearned}
+                  onToggleWeakpoint={toggleWeakpoint}
+                  onClose={() => setSelectedId(null)}
+                />
               )}
             </div>
           </section>
 
-          <section className="h-[154px] shrink-0 border-t border-[#262624] bg-[#efebe2] px-5 py-4">
+          <section className={`absolute right-0 bottom-0 left-0 shrink-0 overflow-hidden border-t border-[#262624] bg-[#efebe2] px-5 transition-all duration-500 ${noteMode ? 'pointer-events-none h-0 border-transparent py-0 opacity-0' : 'h-[154px] py-4 opacity-100'}`}>
             <div className="mb-2 flex items-center">
               <div>
                 <span className="text-[10px] font-black tracking-[0.14em]">새 학습 기록</span>
@@ -353,7 +478,7 @@ export default function App() {
           </section>
         </main>
 
-        <aside className="w-[420px] shrink-0 border-l border-[#262624]">
+        <aside className={`shrink-0 overflow-hidden border-l border-[#262624] transition-all duration-500 ${noteMode ? 'w-0 border-transparent opacity-0' : 'w-[420px] opacity-100'}`}>
           <StreamPanel lines={lines} activeStep={activeStep} phase={phase} />
         </aside>
       </div>

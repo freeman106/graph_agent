@@ -36,6 +36,27 @@ button {
   background: #f7f5ef;
 }
 
+.graph-stage {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: calc(100% - 154px);
+  transition:
+    top 700ms cubic-bezier(.22, .8, .25, 1),
+    left 700ms cubic-bezier(.22, .8, .25, 1),
+    width 700ms cubic-bezier(.22, .8, .25, 1),
+    height 700ms cubic-bezier(.22, .8, .25, 1),
+    box-shadow 500ms ease;
+}
+
+.graph-stage-note {
+  top: 12px;
+  left: 12px;
+  width: 350px;
+  height: 240px;
+}
+
 .font-mono-term {
   font-family: 'SF Mono', 'JetBrains Mono', 'Cascadia Mono', 'Consolas', ui-monospace, monospace;
 }
@@ -141,6 +162,56 @@ button {
   border: 2px solid #f4f0e7;
 }
 
+@keyframes workspace-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.note-workspace {
+  animation: workspace-in 520ms ease-out both;
+}
+
+.note-paper {
+  background-image:
+    linear-gradient(90deg, transparent 47px, rgba(216, 91, 53, 0.08) 48px, transparent 49px),
+    linear-gradient(#fbfaf6 31px, rgba(189, 184, 173, 0.12) 32px);
+  background-size: 100% 100%, 100% 32px;
+}
+
+.note-highlight {
+  margin: 0 -2px;
+  padding: 2px;
+  color: inherit;
+  background: linear-gradient(180deg, transparent 20%, rgba(249, 203, 83, 0.48) 20%, rgba(249, 203, 83, 0.48) 88%, transparent 88%);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  transition: background-color 260ms ease, box-shadow 260ms ease;
+}
+
+.note-highlight-active {
+  background-color: rgba(249, 203, 83, 0.34);
+  box-shadow: 0 0 0 3px rgba(37, 92, 153, 0.13);
+}
+
+.comment-card::before {
+  position: absolute;
+  top: 21px;
+  left: -29px;
+  width: 28px;
+  border-top: 1px solid #bdb8ad;
+  content: '';
+}
+
+@keyframes comment-pop {
+  0% { opacity: 0; transform: translateY(-8px) scale(0.98); }
+  70% { opacity: 1; transform: translateY(2px) scale(1.01); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.comment-pop {
+  animation: comment-pop 420ms cubic-bezier(.22, .8, .25, 1) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .node-pop,
   .ring-pulse,
@@ -148,7 +219,16 @@ button {
   .label-in,
   .flash-ring,
   .line-in,
-  .caret {
+  .caret,
+  .note-workspace,
+  .comment-pop {
     animation: none !important;
+  }
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
   }
 }

@@ -5,11 +5,25 @@ interface Props {
   node: RuntimeNode;
   nodes: RuntimeNode[];
   edges: RuntimeEdge[];
+  resolvedWeakpoints: Set<string>;
   onSelect: (id: string) => void;
+  onOpenNote: (id: string) => void;
+  onToggleLearned: (id: string, checked: boolean) => void;
+  onToggleWeakpoint: (id: string, index: number, checked: boolean) => void;
   onClose: () => void;
 }
 
-export default function NodeDetail({ node, nodes, edges, onSelect, onClose }: Props) {
+export default function NodeDetail({
+  node,
+  nodes,
+  edges,
+  resolvedWeakpoints,
+  onSelect,
+  onOpenNote,
+  onToggleLearned,
+  onToggleWeakpoint,
+  onClose,
+}: Props) {
   const connected = edges
     .filter((edge) => edge.from_id === node.id || edge.to_id === node.id)
     .map((edge) => ({
@@ -32,6 +46,24 @@ export default function NodeDetail({ node, nodes, edges, onSelect, onClose }: Pr
             <span className="text-[10px] font-bold text-[#666259]">{STATUS_LABEL[node.status]}</span>
             {node.isNew && <span className="border border-[#255c99] px-1.5 py-0.5 text-[8.5px] font-black text-[#255c99]">NEW</span>}
           </div>
+          <button
+            onClick={() => onOpenNote(node.id)}
+            className="mt-4 flex w-full items-center justify-between border border-[#255c99] bg-[#edf3f8] px-3 py-2.5 text-left text-[10px] font-black text-[#255c99] transition hover:bg-[#255c99] hover:text-white"
+          >
+            <span>노트에서 보기</span>
+            <span aria-hidden="true">↗</span>
+          </button>
+          {node.status !== 'weak' && (
+            <label className="mt-2 flex cursor-pointer items-center gap-2 border border-[#bdb8ad] bg-[#f8f6f0] px-3 py-2.5 text-[10px] font-black text-[#5f5b53]">
+              <input
+                type="checkbox"
+                checked={node.status === 'learned'}
+                onChange={(event) => onToggleLearned(node.id, event.target.checked)}
+                className="h-4 w-4 accent-[#255c99]"
+              />
+              <span>{node.status === 'learned' ? '학습 완료됨' : '학습 완료로 표시'}</span>
+            </label>
+          )}
         </div>
         <button onClick={onClose} className="grid h-8 w-8 place-items-center border border-[#aaa59b] text-[14px] hover:border-[#262624]" aria-label="닫기">×</button>
       </div>
@@ -45,13 +77,25 @@ export default function NodeDetail({ node, nodes, edges, onSelect, onClose }: Pr
 
         {node.weakpoints.map((weakpoint, index) => (
           <section key={index} className="py-5">
-            <div className="mb-3 flex items-center gap-2 text-[9px] font-black tracking-[0.16em] text-[#9f4025]">
-              <span className="grid h-4 w-4 place-items-center bg-[#d85b35] text-[9px] text-white">!</span>
-              MISCONCEPTION LOG
-            </div>
-            <p className="border-l-2 border-[#d85b35] pl-3 text-[12px] leading-relaxed text-[#5f3428]">{weakpoint.description}</p>
+            {(() => {
+              const resolved = resolvedWeakpoints.has(`${node.id}::${index}`);
+              return <>
+            <label className={`mb-3 flex cursor-pointer items-start gap-3 border p-3 transition ${resolved ? 'border-[#8daf96] bg-[#eef5ef]' : 'border-[#d8a08d] bg-[#fff4ef]'}`}>
+              <input
+                type="checkbox"
+                checked={resolved}
+                onChange={(event) => onToggleWeakpoint(node.id, index, event.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 accent-[#255c99]"
+              />
+              <span>
+                <span className={`block text-[9px] font-black tracking-[0.13em] ${resolved ? 'text-[#3d7650]' : 'text-[#9f4025]'}`}>
+                  {resolved ? '해결 완료' : '막힌 지점 · 해결하면 체크'}
+                </span>
+                <span className={`mt-1.5 block text-[12px] leading-relaxed ${resolved ? 'text-[#66806c] line-through decoration-[#8daf96]' : 'text-[#5f3428]'}`}>{weakpoint.description}</span>
+              </span>
+            </label>
             {(weakpoint.misconception || weakpoint.correction) && (
-              <div className="mt-4 grid grid-cols-[52px_1fr] gap-y-3 text-[11.5px] leading-relaxed">
+              <div className={`mt-4 grid grid-cols-[52px_1fr] gap-y-3 text-[11.5px] leading-relaxed ${resolved ? 'opacity-55' : ''}`}>
                 {weakpoint.misconception && <><span className="font-black text-[#a24b36]">BEFORE</span><p className="text-[#76574e] line-through decoration-[#c17a67]">{weakpoint.misconception}</p></>}
                 {weakpoint.correction && <><span className="font-black text-[#255c99]">AFTER</span><p className="font-medium text-[#28445f]">{weakpoint.correction}</p></>}
               </div>
@@ -69,6 +113,8 @@ export default function NodeDetail({ node, nodes, edges, onSelect, onClose }: Pr
                 </div>
               </details>
             )}
+              </>;
+            })()}
           </section>
         ))}
 

@@ -12,6 +12,7 @@ interface Props {
   selectedId: string | null;
   noteIds: Set<string>;
   filter: string;
+  compact?: boolean;
   onSelect: (id: string | null) => void;
 }
 
@@ -37,7 +38,7 @@ const edgeDash = (relation: RuntimeEdge['relation']) => {
   return undefined;
 };
 
-export default function Graph({ nodes, edges, selectedId, noteIds, filter, onSelect }: Props) {
+export default function Graph({ nodes, edges, selectedId, noteIds, filter, compact = false, onSelect }: Props) {
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [viewBox, setViewBox] = useState(FULL_VIEW);
   const animationFrame = useRef<number | null>(null);
@@ -142,7 +143,7 @@ export default function Graph({ nodes, edges, selectedId, noteIds, filter, onSel
 
       <rect width={GRAPH_VIEWBOX.width} height={GRAPH_VIEWBOX.height} fill="url(#paper-grid)" opacity="0.58" />
 
-      <g className="map-districts" pointerEvents="none">
+      {!compact && <g className="map-districts" pointerEvents="none">
         <path d="M 206 30 V 535" stroke="#b8b3a8" strokeWidth="1" />
         <path d="M 695 30 V 535" stroke="#b8b3a8" strokeWidth="1" />
         <path d="M 32 535 H 1028" stroke="#b8b3a8" strokeWidth="1" />
@@ -150,7 +151,7 @@ export default function Graph({ nodes, edges, selectedId, noteIds, filter, onSel
         <text x="230" y="48">02 / ATTENTION</text>
         <text x="720" y="48">03 / ARCHITECTURE</text>
         <text x="42" y="560">04 / DECODING</text>
-      </g>
+      </g>}
 
       <g>
         {edges.map((edge) => {
@@ -219,6 +220,9 @@ export default function Graph({ nodes, edges, selectedId, noteIds, filter, onSel
             <g
               key={node.id}
               data-testid={`node-${node.id}`}
+              role="button"
+              tabIndex={0}
+              aria-label={`${node.name} 노드 열기`}
               transform={`translate(${node.x},${node.y})`}
               opacity={node.removing ? 0 : dimmed ? 0.18 : 1}
               className={node.removing ? 'fading' : undefined}
@@ -226,6 +230,13 @@ export default function Graph({ nodes, edges, selectedId, noteIds, filter, onSel
               onMouseEnter={() => setHoverId(node.id)}
               onMouseLeave={() => setHoverId(null)}
               onClick={(event) => { event.stopPropagation(); onSelect(node.id); }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onSelect(node.id);
+                }
+              }}
             >
               <g className={node.justAdded ? 'node-pop' : undefined}>
                 {node.justAdded && <circle r="18" fill="none" stroke="#255c99" strokeWidth="1.5" className="ring-pulse" />}
@@ -262,7 +273,7 @@ export default function Graph({ nodes, edges, selectedId, noteIds, filter, onSel
         })}
       </g>
 
-      {hovered && (
+      {hovered && !compact && (
         <g transform="translate(738,586)" pointerEvents="none">
           <rect width="280" height="116" fill="#f1ede4" stroke="#262624" />
           <text x="14" y="21" fontSize="9" fontWeight="900" letterSpacing="1.4" fill="#77736a">CONCEPT INDEX</text>

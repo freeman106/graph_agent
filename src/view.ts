@@ -27,6 +27,21 @@ export type RuntimeNode = Node & Point & RuntimeFlags;
 /** 계약 Edge + 연출 플래그. */
 export type RuntimeEdge = Edge & RuntimeFlags;
 
+/** 강의노트 위 코멘트. 문서 앵커는 프론트 DOM에만 존재한다. */
+export interface RuntimeNoteComment {
+  id: string;
+  anchorId: string | null;
+  quote: string | null;
+  nodeId: string;
+  title: string;
+  body: string;
+  source: string;
+  relatedNodeId: string | null;
+  relatedAnchorId: string | null;
+  revealOnRun: boolean;
+  createdNow?: boolean;
+}
+
 /* ── 실행 스트림 (프론트 표시용) ────────────────────────────── */
 
 export type StreamLineKind =
