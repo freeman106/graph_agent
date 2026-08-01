@@ -56,9 +56,12 @@ export const PLACEMENTS: Placement[] = [
       aliases: ['KV 캐시', 'kv-cache', 'key value cache'],
       summary:
         '자기회귀 생성에서 이전 토큰들의 Key/Value 텐서를 저장해두고 재사용해, 매 스텝의 재계산을 없애는 추론 전용 최적화.',
+      note: '',
       status: 'learned',
+      origin: 'conversation',
       weakpoints: [],
       source_conversation_id: CONVERSATION.id,
+      source_lecture_id: null,
     },
     edges: [
       {
@@ -93,9 +96,12 @@ export const PLACEMENTS: Placement[] = [
       name: 'Autoregressive Decoding',
       aliases: ['자기회귀 생성', '자기회귀 디코딩', 'autoregressive generation'],
       summary: '이전까지 생성한 토큰을 다시 입력으로 넣어 다음 토큰을 하나씩 뽑는 순차 생성 방식.',
+      note: '',
       status: 'learned',
+      origin: 'conversation',
       weakpoints: [],
       source_conversation_id: CONVERSATION.id,
+      source_lecture_id: null,
     },
     edges: [
       {
@@ -130,9 +136,12 @@ export const PLACEMENTS: Placement[] = [
       name: 'Incremental Decoding',
       aliases: ['증분 디코딩'],
       summary: '스텝마다 새 토큰 하나 분량만 추가로 계산하는 생성 방식.',
+      note: '',
       status: 'learned',
+      origin: 'conversation',
       weakpoints: [],
       source_conversation_id: CONVERSATION.id,
+      source_lecture_id: null,
     },
     edges: [
       {
@@ -153,9 +162,12 @@ export const PLACEMENTS: Placement[] = [
       aliases: ['플래시 어텐션', 'flashattention'],
       summary:
         '어텐션 행렬을 메모리에 쓰지 않고 타일 단위로 처리해 HBM 왕복을 줄이는 IO 최적화. 결과값은 기존 어텐션과 동일하다.',
+      note: '',
       status: 'learned',
+      origin: 'conversation',
       weakpoints: [],
       source_conversation_id: CONVERSATION.id,
+      source_lecture_id: null,
     },
     edges: [
       {

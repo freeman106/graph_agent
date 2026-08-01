@@ -40,7 +40,8 @@ contract/
 ## 계약 A — 그래프 상태
 
 ```
-Node   : id, name, aliases[], summary, status, weakpoints[], source_conversation_id
+Node   : id, name, aliases[], summary, note, status, origin,
+         weakpoints[], source_conversation_id, source_lecture_id
 Edge   : id, from_id, to_id, relation, rationale
 Graph  : version, nodes[], edges[]
 ```
@@ -48,7 +49,22 @@ Graph  : version, nodes[], edges[]
 | 필드 | 값 |
 |---|---|
 | `status` | `unlearned` \| `learned` \| `weak` |
+| `origin` | `lecture` \| `conversation` |
 | `relation` | `prerequisite` \| `component` \| `variant` \| `contrast` \| `application` |
+
+### `summary` 와 `note` 는 다른 칸이다
+
+| | 답하는 질문 | 쓰임 |
+|---|---|---|
+| `summary` | 이 개념이 **무엇인지** | 그래프 노드에 붙는 한 줄 |
+| `note` | **이 강의가** 이 개념을 어떻게 다뤘는지 | 노트 패널에 펼치는 본문 |
+
+`note` 가 따로 있는 이유는 **약점 판정의 기준선**이다. "강의가 다룬 범위" 와
+"학생이 실제로 되물은 것" 을 비교할 수 있어야 약점이 추측이 아니라 근거가 된다.
+한 칸에 섞으면 그 비교가 성립하지 않는다.
+
+`origin` 은 강의안에서 추출된 노드와 대화에서 새로 생긴 노드를 가른다.
+기본값은 `conversation` 이고, 강의안 추출 경로가 `lecture` 를 명시적으로 넣는다.
 
 ### 간선 방향 규칙 (중요)
 

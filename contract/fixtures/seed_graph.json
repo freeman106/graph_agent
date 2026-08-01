@@ -6,34 +6,45 @@
       "name": "Tokenization",
       "aliases": ["토크나이제이션", "토큰화", "tokenize"],
       "summary": "원문 텍스트를 모델이 다룰 수 있는 이산 단위(토큰)로 자르는 전처리 단계.",
+      "note": "",
       "status": "learned",
+      "origin": "lecture",
       "weakpoints": [],
-      "source_conversation_id": null
+      "source_conversation_id": null,
+      "source_lecture_id": null
     },
     {
       "id": "bpe",
       "name": "BPE",
       "aliases": ["Byte Pair Encoding", "바이트 페어 인코딩"],
       "summary": "자주 붙어 나오는 바이트 쌍을 반복 병합해 어휘를 만드는 토크나이저. 미등록 단어를 조각으로 표현할 수 있다.",
+      "note": "",
       "status": "learned",
+      "origin": "lecture",
       "weakpoints": [],
-      "source_conversation_id": null
+      "source_conversation_id": null,
+      "source_lecture_id": null
     },
     {
       "id": "embedding",
       "name": "Embedding",
       "aliases": ["임베딩", "토큰 임베딩", "token embedding"],
       "summary": "토큰 id를 연속 벡터 공간으로 옮기는 학습 가능한 조회 테이블.",
+      "note": "",
       "status": "learned",
+      "origin": "lecture",
       "weakpoints": [],
-      "source_conversation_id": null
+      "source_conversation_id": null,
+      "source_lecture_id": null
     },
     {
       "id": "positional-encoding",
       "name": "Positional Encoding",
       "aliases": ["위치 인코딩", "PE", "positional embedding"],
       "summary": "어텐션 자체는 순서를 모르므로 위치 정보를 따로 주입한다. 사인/코사인 방식과 학습형 방식이 있다.",
+      "note": "",
       "status": "weak",
+      "origin": "lecture",
       "weakpoints": [
         {
           "description": "절대 위치 인코딩과 상대 위치 인코딩의 차이를 이전 대화에서 되물었다. 위치 정보를 더하는 것과 Q/K를 회전시키는 것이 같은 목적의 다른 수단이라는 점을 놓쳤다.",
@@ -43,169 +54,224 @@
           "source_conversation_id": "conv-prev-positional"
         }
       ],
-      "source_conversation_id": null
+      "source_conversation_id": null,
+      "source_lecture_id": null
     },
     {
       "id": "rotary-positional-embedding",
       "name": "Rotary Positional Embedding",
       "aliases": ["RoPE", "로터리 임베딩", "회전 위치 임베딩"],
       "summary": "위치 정보를 더하는 대신 Q/K 벡터를 위치에 따라 회전시켜 상대 위치를 반영하는 방식.",
+      "note": "",
       "status": "unlearned",
+      "origin": "lecture",
       "weakpoints": [],
-      "source_conversation_id": null
+      "source_conversation_id": null,
+      "source_lecture_id": null
     },
     {
       "id": "softmax",
       "name": "Softmax",
       "aliases": ["소프트맥스"],
       "summary": "실수 점수 벡터를 합이 1인 확률 분포로 바꾸는 함수. 어텐션 가중치와 출력 분포 모두에 쓰인다.",
+      "note": "",
       "status": "learned",
+      "origin": "lecture",
       "weakpoints": [],
-      "source_conversation_id": null
+      "source_conversation_id": null,
+      "source_lecture_id": null
     },
     {
       "id": "query-key-value",
       "name": "Query/Key/Value",
       "aliases": ["QKV", "Q/K/V", "쿼리 키 밸류", "Key/Value", "K/V"],
       "summary": "입력을 세 가지 역할의 벡터로 투영한 것. Query는 무엇을 찾는가, Key는 나는 무엇인가, Value는 실제로 전달할 내용.",
+      "note": "",
       "status": "learned",
+      "origin": "lecture",
       "weakpoints": [],
-      "source_conversation_id": null
+      "source_conversation_id": null,
+      "source_lecture_id": null
     },
     {
       "id": "attention",
       "name": "Attention",
       "aliases": ["어텐션", "주의 메커니즘"],
       "summary": "질의에 대한 관련도로 값들을 가중 평균하는 연산. 거리에 상관없이 토큰을 직접 연결한다.",
+      "note": "",
       "status": "learned",
+      "origin": "lecture",
       "weakpoints": [],
-      "source_conversation_id": null
+      "source_conversation_id": null,
+      "source_lecture_id": null
     },
     {
       "id": "scaled-dot-product-attention",
       "name": "Scaled Dot-Product Attention",
       "aliases": ["SDPA", "스케일드 닷 프로덕트 어텐션"],
       "summary": "softmax(QK^T/sqrt(d))V. sqrt(d)로 나누는 이유는 차원이 커질수록 내적 분산이 커져 softmax가 포화되기 때문.",
+      "note": "",
       "status": "learned",
+      "origin": "lecture",
       "weakpoints": [],
-      "source_conversation_id": null
+      "source_conversation_id": null,
+      "source_lecture_id": null
     },
     {
       "id": "self-attention",
       "name": "Self-Attention",
       "aliases": ["셀프 어텐션", "자기 어텐션", "self attention"],
       "summary": "Q, K, V를 모두 같은 시퀀스에서 만드는 어텐션. 시퀀스 내부의 토큰끼리 서로를 참조한다.",
+      "note": "",
       "status": "learned",
+      "origin": "lecture",
       "weakpoints": [],
-      "source_conversation_id": null
+      "source_conversation_id": null,
+      "source_lecture_id": null
     },
     {
       "id": "multi-head-attention",
       "name": "Multi-Head Attention",
       "aliases": ["MHA", "멀티헤드 어텐션", "다중 헤드 어텐션"],
       "summary": "어텐션을 여러 개의 부분 공간에서 병렬로 수행하고 concat. 헤드마다 다른 관계 패턴을 잡는다.",
+      "note": "",
       "status": "learned",
+      "origin": "lecture",
       "weakpoints": [],
-      "source_conversation_id": null
+      "source_conversation_id": null,
+      "source_lecture_id": null
     },
     {
       "id": "masked-attention",
       "name": "Masked Attention",
       "aliases": ["마스크드 어텐션", "마스킹 어텐션", "causal attention", "인과 어텐션"],
       "summary": "미래 위치의 점수를 -inf로 만들어 각 토큰이 자기 앞쪽만 보게 하는 어텐션. 디코더의 인과성을 보장한다.",
+      "note": "",
       "status": "learned",
+      "origin": "lecture",
       "weakpoints": [],
-      "source_conversation_id": null
+      "source_conversation_id": null,
+      "source_lecture_id": null
     },
     {
       "id": "cross-attention",
       "name": "Cross-Attention",
       "aliases": ["크로스 어텐션", "교차 어텐션"],
       "summary": "Query는 디코더에서, Key/Value는 인코더에서 가져오는 어텐션. 두 시퀀스를 잇는 다리 역할.",
+      "note": "",
       "status": "unlearned",
+      "origin": "lecture",
       "weakpoints": [],
-      "source_conversation_id": null
+      "source_conversation_id": null,
+      "source_lecture_id": null
     },
     {
       "id": "feed-forward-network",
       "name": "Feed-Forward Network",
       "aliases": ["FFN", "피드포워드", "MLP"],
       "summary": "토큰마다 독립적으로 적용되는 2층 MLP. 어텐션이 섞은 정보를 위치별로 변환한다.",
+      "note": "",
       "status": "learned",
+      "origin": "lecture",
       "weakpoints": [],
-      "source_conversation_id": null
+      "source_conversation_id": null,
+      "source_lecture_id": null
     },
     {
       "id": "layer-normalization",
       "name": "Layer Normalization",
       "aliases": ["LayerNorm", "레이어 정규화", "층 정규화"],
       "summary": "배치가 아니라 피처 축으로 정규화. 시퀀스 길이가 들쭉날쭉해도 안정적이다.",
+      "note": "",
       "status": "learned",
+      "origin": "lecture",
       "weakpoints": [],
-      "source_conversation_id": null
+      "source_conversation_id": null,
+      "source_lecture_id": null
     },
     {
       "id": "transformer-block",
       "name": "Transformer Block",
       "aliases": ["트랜스포머 블록", "트랜스포머 레이어"],
       "summary": "어텐션 + FFN을 residual과 normalization으로 감싼 반복 단위.",
+      "note": "",
       "status": "learned",
+      "origin": "lecture",
       "weakpoints": [],
-      "source_conversation_id": null
+      "source_conversation_id": null,
+      "source_lecture_id": null
     },
     {
       "id": "residual-connection",
       "name": "Residual Connection",
       "aliases": ["잔차 연결", "skip connection", "스킵 커넥션"],
       "summary": "입력을 출력에 그대로 더해 기울기가 깊은 층까지 흐르게 하는 우회로.",
+      "note": "",
       "status": "learned",
+      "origin": "lecture",
       "weakpoints": [],
-      "source_conversation_id": null
+      "source_conversation_id": null,
+      "source_lecture_id": null
     },
     {
       "id": "encoder-decoder",
       "name": "Encoder-Decoder",
       "aliases": ["인코더 디코더", "seq2seq"],
       "summary": "입력을 표현으로 압축하는 인코더와, 그 표현을 보며 출력을 생성하는 디코더로 나뉜 구조.",
+      "note": "",
       "status": "learned",
+      "origin": "lecture",
       "weakpoints": [],
-      "source_conversation_id": null
+      "source_conversation_id": null,
+      "source_lecture_id": null
     },
     {
       "id": "grouped-query-attention",
       "name": "Grouped-Query Attention",
       "aliases": ["GQA", "그룹 쿼리 어텐션", "grouped query attention"],
       "summary": "여러 Query 헤드가 Key/Value 헤드를 공유해 KV 메모리를 줄이는 어텐션 변형.",
+      "note": "",
       "status": "unlearned",
+      "origin": "lecture",
       "weakpoints": [],
-      "source_conversation_id": null
+      "source_conversation_id": null,
+      "source_lecture_id": null
     },
     {
       "id": "greedy-decoding",
       "name": "Greedy Decoding",
       "aliases": ["그리디 디코딩", "탐욕적 디코딩"],
       "summary": "매 스텝 확률이 가장 높은 토큰 하나만 고르는 디코딩. 빠르지만 지역 최적에 빠진다.",
+      "note": "",
       "status": "learned",
+      "origin": "lecture",
       "weakpoints": [],
-      "source_conversation_id": null
+      "source_conversation_id": null,
+      "source_lecture_id": null
     },
     {
       "id": "beam-search",
       "name": "Beam Search",
       "aliases": ["빔 서치", "빔 탐색"],
       "summary": "상위 k개 후보 시퀀스를 동시에 유지하며 확장하는 디코딩.",
+      "note": "",
       "status": "unlearned",
+      "origin": "lecture",
       "weakpoints": [],
-      "source_conversation_id": null
+      "source_conversation_id": null,
+      "source_lecture_id": null
     },
     {
       "id": "temperature-sampling",
       "name": "Temperature Sampling",
       "aliases": ["온도 샘플링", "temperature"],
       "summary": "softmax 이전 로짓을 T로 나눠 분포의 뾰족함을 조절한 뒤 표본을 뽑는 디코딩.",
+      "note": "",
       "status": "unlearned",
+      "origin": "lecture",
       "weakpoints": [],
-      "source_conversation_id": null
+      "source_conversation_id": null,
+      "source_lecture_id": null
     }
   ],
   "edges": [

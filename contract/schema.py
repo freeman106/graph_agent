@@ -35,6 +35,11 @@ NodeStatus = Literal[
     "weak",  # 공부했지만 대화에서 헤맨 흔적이 있음
 ]
 
+NodeOrigin = Literal[
+    "lecture",  # 강의안에서 추출된 노드
+    "conversation",  # 대화에서 새로 생긴 노드
+]
+
 Relation = Literal[
     "prerequisite",  # 선행 개념
     "component",  # 구성 요소
@@ -89,11 +94,23 @@ class Node(BaseModel):
         default_factory=list,
         description="같은 개념을 가리키는 다른 표기. search_nodes 가 이걸 본다",
     )
-    summary: str = Field(default="", description="개념 요약 1~3문장")
+    summary: str = Field(default="", description="개념 요약 1~3문장. 그래프에 붙는 한 줄")
+    note: str = Field(
+        default="",
+        description="상세 노트 본문. summary 와 다르다 — summary 는 개념이 무엇인지, "
+        "note 는 이 강의가 이 개념을 어떻게 다뤘는지다. 약점 판정의 기준선이 된다",
+    )
     status: NodeStatus = "unlearned"
+    origin: NodeOrigin = Field(
+        default="conversation",
+        description="이 노드가 어디서 생겼는지. 강의안 추출 경로가 'lecture' 를 명시적으로 넣는다",
+    )
     weakpoints: list[Weakpoint] = Field(default_factory=list)
     source_conversation_id: str | None = Field(
         default=None, description="이 노드를 만들어낸 대화. 시드 노드는 None"
+    )
+    source_lecture_id: str | None = Field(
+        default=None, description="이 노드를 만들어낸 강의안. 대화에서 생긴 노드는 None"
     )
 
 
@@ -265,6 +282,7 @@ __all__ = [
     "SCHEMA_VERSION",
     "EDGE_DIRECTION_RULE",
     "NodeStatus",
+    "NodeOrigin",
     "Relation",
     "Evidence",
     "Weakpoint",

@@ -28,6 +28,10 @@ export type Relation =
   | 'contrast' // 대비
   | 'application'; // 응용
 
+export type NodeOrigin =
+  | 'lecture' // 강의안에서 추출된 노드
+  | 'conversation'; // 대화에서 새로 생긴 노드
+
 /**
  * 간선 방향 규칙 — `from_id` 노드가 `to_id` 노드의 `relation` 이다.
  * 예) Softmax --component--> Attention = "Softmax 는 Attention 의 구성 요소"
@@ -66,12 +70,21 @@ export interface Node {
   name: string;
   /** 같은 개념을 가리키는 다른 표기. search_nodes 가 이걸 본다 */
   aliases: string[];
-  /** 개념 요약 1~3문장 */
+  /** 개념 요약 1~3문장. 그래프에 붙는 한 줄 */
   summary: string;
+  /**
+   * 상세 노트 본문. summary 와 다르다 — summary 는 개념이 무엇인지,
+   * note 는 이 강의가 이 개념을 어떻게 다뤘는지다. 약점 판정의 기준선이 된다
+   */
+  note: string;
   status: NodeStatus;
+  /** 이 노드가 어디서 생겼는지. 강의안 추출 경로가 'lecture' 를 명시적으로 넣는다 */
+  origin: NodeOrigin;
   weakpoints: Weakpoint[];
   /** 이 노드를 만들어낸 대화. 시드 노드는 null */
   source_conversation_id: string | null;
+  /** 이 노드를 만들어낸 강의안. 대화에서 생긴 노드는 null */
+  source_lecture_id: string | null;
 }
 
 /** 개념 사이의 관계. 방향 규칙은 EDGE_DIRECTION_RULE 참고. */
