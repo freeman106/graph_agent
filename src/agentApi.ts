@@ -114,28 +114,42 @@ async function runEndpoint(url: string, text: string, handlers: Handlers): Promi
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  let terminal = false;
+
+  const handleChunk = (chunk: string) => {
+    const line = chunk.split(/\r?\n/).find((candidate) => candidate.startsWith('data: '));
+    if (!line) return;
+    let message: { type: string; event?: StreamEvent; message?: string };
+    try {
+      message = JSON.parse(line.slice(6));
+    } catch {
+      return;
+    }
+    if (message.type === 'event' && message.event) handlers.onEvent(message.event);
+    else if (message.type === 'done') {
+      terminal = true;
+      handlers.onDone();
+    } else if (message.type === 'error') {
+      terminal = true;
+      handlers.onError(message.message ?? '실행 실패');
+    }
+  };
 
   for (;;) {
     const { done, value } = await reader.read();
-    if (done) break;
+    if (done) {
+      buffer += decoder.decode();
+      if (buffer.trim()) handleChunk(buffer);
+      break;
+    }
     buffer += decoder.decode(value, { stream: true });
 
-    const chunks = buffer.split('\n\n');
+    const chunks = buffer.split(/\r?\n\r?\n/);
     buffer = chunks.pop() ?? '';
-    for (const chunk of chunks) {
-      const line = chunk.split('\n').find((l) => l.startsWith('data: '));
-      if (!line) continue;
-      let message: { type: string; event?: StreamEvent; message?: string };
-      try {
-        message = JSON.parse(line.slice(6));
-      } catch {
-        continue;
-      }
-      if (message.type === 'event' && message.event) handlers.onEvent(message.event);
-      else if (message.type === 'done') handlers.onDone();
-      else if (message.type === 'error') handlers.onError(message.message ?? '실행 실패');
-    }
+    chunks.forEach(handleChunk);
   }
+
+  if (!terminal) handlers.onError('실행 스트림이 완료 신호 없이 종료되었습니다.');
 }
 
 /**

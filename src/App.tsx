@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { RELATION_LABEL, type Chapter, type Edge, type Node } from '../contract/schema';
+import { RELATION_LABEL, type Chapter, type Edge, type Node, type StreamEvent } from '../contract/schema';
 import Graph from './components/Graph';
 import Legend from './components/Legend';
 import NodeDetail from './components/NodeDetail';
@@ -24,9 +24,36 @@ import {
   WEAKPOINT_NODE_ID,
 } from './mock';
 import { fetchGraph, fetchSharedChat, isShareUrl, probeAgent, runAgent, runLecture, toStreamLine, type AgentStatus } from './agentApi';
-import type { RuntimeEdge, RuntimeNode, RuntimeNoteComment, StreamLine, StreamLineKind } from './view';
+import type { RuntimeEdge, RuntimeNode, RuntimeNoteComment, RuntimePipelineStep, StreamLine, StreamLineKind } from './view';
 
 type Phase = 'idle' | 'running' | 'done';
+type LearningInputMode = 'conversation' | 'share' | 'reflection';
+
+const INPUT_MODES: Array<{
+  id: LearningInputMode;
+  label: string;
+  hint: string;
+  placeholder: string;
+}> = [
+  {
+    id: 'conversation',
+    label: 'GPT 대화 원문',
+    hint: '나: / ChatGPT: 형식의 학습 대화',
+    placeholder: 'GPT와 나눈 학습 대화를 그대로 붙여넣으세요…',
+  },
+  {
+    id: 'share',
+    label: 'GPT 공유 링크',
+    hint: 'chatgpt.com/share 링크',
+    placeholder: 'https://chatgpt.com/share/…',
+  },
+  {
+    id: 'reflection',
+    label: '현재 학습 상황',
+    hint: '이해한 내용·막힌 지점·궁금한 점',
+    placeholder: '예: 역전파의 계산 순서는 이해했지만, 왜 활성화 함수를 통과할 때 기울기가 작아지는지는 아직 헷갈립니다.',
+  },
+];
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, Math.round(ms * 0.42)));
 
@@ -86,6 +113,13 @@ function pointsOf(nodes: RuntimeNode[]): Record<string, Point> {
   return Object.fromEntries(nodes.map((node) => [node.id, { x: node.x, y: node.y }]));
 }
 
+/** 약점 내용이 있는데 상태만 learned인 과거 실행 데이터도 화면에서는 약점으로 복구한다. */
+function normalizeWeakpointStatus(node: Node): Node {
+  return node.comments.some((comment) => comment.weakpoint)
+    ? { ...node, status: 'weak' }
+    : node;
+}
+
 const NAMES = new Map<string, string>([
   ...INITIAL_NODES.map((node) => [node.id, node.name] as const),
   ...PLACEMENTS.map((placement) => [placement.node.id, placement.node.name] as const),
@@ -106,7 +140,11 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>('idle');
   const [activeStep, setActiveStep] = useState(-1);
+  // null은 목 6단계, 배열은 실제 스트림의 툴 호출과 1:1로 대응한다.
+  const [pipelineSteps, setPipelineSteps] = useState<RuntimePipelineStep[] | null>(null);
   const [pasted, setPasted] = useState('');
+  const [inputMode, setInputMode] = useState<LearningInputMode>('conversation');
+  const [inputError, setInputError] = useState<string | null>(null);
   const [mapFilter, setMapFilter] = useState('all');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [noteMode, setNoteMode] = useState(false);
@@ -180,6 +218,33 @@ export default function App() {
     setLines((previous) => [...previous, { id, kind, text }]);
   }, []);
 
+  const syncLivePipeline = (event: StreamEvent) => {
+    if (event.kind === 'tool_call') {
+      setPipelineSteps((previous) => [
+        ...(previous ?? []),
+        { id: event.seq, tool: event.tool ?? 'unknown', status: 'running' },
+      ]);
+      return;
+    }
+    if (event.kind !== 'tool_result') return;
+    setPipelineSteps((previous) => {
+      if (!previous) return [];
+      const match = previous.findIndex(
+        (step) => step.status === 'running' && step.tool === (event.tool ?? 'unknown'),
+      );
+      if (match < 0) return previous;
+      return previous.map((step, index) =>
+        index === match ? { ...step, status: 'done' } : step,
+      );
+    });
+  };
+
+  const finishLivePipeline = () => {
+    setPipelineSteps((previous) =>
+      previous?.map((step) => ({ ...step, status: 'done' })) ?? [],
+    );
+  };
+
   const annotationsVisible = activeStep >= 3 || phase === 'done';
   const noteIds = useMemo(() => {
     const ids = new Set(nodes.filter((node) => node.comments.some((c) => c.weakpoint)).map((node) => node.id));
@@ -193,6 +258,7 @@ export default function App() {
   const weakCount = nodes.filter((node) => node.status === 'weak').length;
   const openCount = nodes.filter((node) => node.status === 'unlearned').length;
   const newCount = nodes.filter((node) => node.isNew).length;
+  const selectedInputMode = INPUT_MODES.find((mode) => mode.id === inputMode) ?? INPUT_MODES[0];
 
   const reset = () => {
     runToken.current++;
@@ -203,7 +269,10 @@ export default function App() {
     setSelectedId(null);
     setPhase('idle');
     setActiveStep(-1);
+    setPipelineSteps(null);
     setPasted('');
+    setInputMode('conversation');
+    setInputError(null);
     setMapFilter('all');
     setNoteMode(false);
     setDocNote(false);
@@ -331,19 +400,21 @@ export default function App() {
     setSelectedId(null);
     setPhase('running');
     setActiveStep(-1);
+    setPipelineSteps([]);
     push('system', `강의안 ${text.length.toLocaleString()}자 → 빈 그래프에서 시작`);
     push('system', `실제 실행 — OpenAI API (키 …${agent.keyTail ?? ''})`);
 
-    let step = -1;
     await runLecture(text, {
       onEvent: (event) => {
         if (!alive()) return;
-        if (event.kind === 'decision') setActiveStep(++step);
+        syncLivePipeline(event);
         const line = toStreamLine(event);
         if (line) push(line.kind, line.text);
       },
       onDone: () => {
         if (!alive()) return;
+        finishLivePipeline();
+        setPhase('done');
         void fetchGraph().then((graph) => {
           if (!alive() || !graph) return;
           // 강의안에서 처음 만든 그래프는 전부 기본 노드다.
@@ -351,12 +422,12 @@ export default function App() {
           setNodes(withLayout(graph.nodes, graph.edges, graph.chapters));
           setEdges(graph.edges.map((edge) => ({ ...edge })));
           setChapters(graph.chapters);
-          setPhase('done');
           push('system', `강의안 반영 완료 — 노드 ${graph.nodes.length}개 / 간선 ${graph.edges.length}개 / 단원 ${graph.chapters.length}개`);
         });
       },
       onError: (message) => {
         if (!alive()) return;
+        finishLivePipeline();
         push('system', `실행 실패 — ${message}`);
         setPhase('done');
       },
@@ -377,26 +448,29 @@ export default function App() {
     setPhase('running');
     setSelectedId(null);
     setActiveStep(-1);
+    setPipelineSteps([]);
     push('system', `대화 입력 감지 — ${text.length.toLocaleString()}자`);
     push('system', `실제 실행 — OpenAI API (키 …${agent.keyTail ?? ''})`);
 
-    let step = -1;
     await runAgent(text, {
       onEvent: (event) => {
         if (!alive()) return;
-        if (event.kind === 'decision') setActiveStep(++step);
+        syncLivePipeline(event);
         const line = toStreamLine(event);
         if (line) push(line.kind, line.text);
       },
       onDone: () => {
         if (!alive()) return;
+        finishLivePipeline();
+        setPhase('done');
         void fetchGraph().then((graph) => {
           if (!alive() || !graph) return;
           // 좌표는 계약에 없다. 새 노드는 프론트가 기존 배치를 보고 자리를 잡는다.
           setNodes((previous) => {
             const points = pointsOf(previous);
             const known = new Set(previous.map((node) => node.id));
-            return graph.nodes.map((node) => {
+            return graph.nodes.map((rawNode) => {
+              const node = normalizeWeakpointStatus(rawNode);
               const seen = previous.find((candidate) => candidate.id === node.id);
               // 새 노드는 이미 자리를 아는 이웃 옆에 붙인다.
               const anchors = graph.edges
@@ -410,12 +484,12 @@ export default function App() {
           });
           setEdges(graph.edges.map((edge) => ({ ...edge })));
           setChapters(graph.chapters);
-          setPhase('done');
           push('system', `실행 완료 — 노드 ${graph.nodes.length}개 / 간선 ${graph.edges.length}개`);
         });
       },
       onError: (message) => {
         if (!alive()) return;
+        finishLivePipeline();
         push('system', `실행 실패 — ${message}`);
         setPhase('done');
       },
@@ -444,6 +518,7 @@ export default function App() {
     const token = ++runToken.current;
     const alive = () => runToken.current === token;
 
+    setPipelineSteps(null);
     setPasted(text);
     setPhase('running');
     setSelectedId(null);
@@ -592,11 +667,29 @@ export default function App() {
     setPhase('done');
   };
 
-  const handlePaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+  const selectInputMode = (mode: LearningInputMode) => {
+    if (phase === 'running' || mode === inputMode) return;
+    setInputMode(mode);
+    setPasted('');
+    setInputError(null);
+  };
+
+  const submitLearningRecord = () => {
     if (phase === 'running') return;
-    const text = event.clipboardData.getData('text');
-    if (text.trim().length < 20) return;
-    event.preventDefault();
+    const text = pasted.trim();
+    if (inputMode === 'share' && !isShareUrl(text)) {
+      setInputError('ChatGPT 공유 링크 형식을 확인해 주세요.');
+      return;
+    }
+    if (inputMode === 'conversation' && text.length < 20) {
+      setInputError('분석할 학습 대화를 20자 이상 입력해 주세요.');
+      return;
+    }
+    if (inputMode === 'reflection' && text.length < 10) {
+      setInputError('현재 이해한 내용이나 막힌 지점을 10자 이상 적어 주세요.');
+      return;
+    }
+    setInputError(null);
     void run(text);
   };
 
@@ -807,33 +900,73 @@ export default function App() {
             </div>
           </section>
 
-          <section className={`absolute right-0 bottom-0 left-0 shrink-0 overflow-hidden border-t border-[#262624] bg-[#efebe2] px-5 transition-all duration-500 ${noteLayout || studyMode ? 'pointer-events-none h-0 border-transparent py-0 opacity-0' : 'h-[154px] py-4 opacity-100'}`}>
+          <section className={`absolute right-0 bottom-0 left-0 z-50 shrink-0 overflow-hidden border-t border-[#262624] bg-[#efebe2] px-5 transition-all duration-500 ${noteLayout || studyMode ? 'pointer-events-none h-0 border-transparent py-0 opacity-0' : 'h-[218px] py-3 opacity-100'}`}>
             <div className="mb-2 flex items-center">
               <div>
                 <span className="text-[10px] font-black tracking-[0.14em]">새 학습 기록</span>
               </div>
               <div className="ml-auto flex items-center gap-3 text-[10px]">
-                {phase === 'idle' ? (
-                  <button onClick={() => void run(SAMPLE_CONVERSATION)} className="border-b border-[#255c99] pb-0.5 font-bold text-[#255c99]">샘플 기록 실행</button>
-                ) : (
+                {inputMode === 'conversation' && phase === 'idle' && (
+                  <button onClick={() => { setPasted(SAMPLE_CONVERSATION); void run(SAMPLE_CONVERSATION); }} className="border-b border-[#255c99] pb-0.5 font-bold text-[#255c99]">샘플 기록 실행</button>
+                )}
+                {phase !== 'idle' && (
                   <button onClick={reset} className="border-b border-[#d85b35] pb-0.5 font-bold text-[#9f4025]">초기화</button>
                 )}
-                <span className="font-mono-term text-[#aaa59b]">PASTE TO RUN</span>
+                <span className="font-mono-term text-[#aaa59b]">CHOOSE · WRITE · RUN</span>
               </div>
             </div>
-            <textarea
-              value={pasted}
-              onPaste={handlePaste}
-              onChange={(event) => setPasted(event.target.value)}
-              readOnly={phase === 'running'}
-              placeholder="여기에 ChatGPT 또는 Claude 학습 대화를 붙여넣으세요…"
-              className="light-scroll h-[92px] w-full resize-none border border-[#bdb8ad] bg-[#f8f6f0] px-3 py-2.5 text-[12px] leading-relaxed text-[#3c3a36] outline-none placeholder:text-[#aaa59b] focus:border-[#262624] disabled:opacity-60"
-            />
+            <div className="mb-2 grid grid-cols-3 gap-1.5">
+              {INPUT_MODES.map((mode, index) => {
+                const active = mode.id === inputMode;
+                return (
+                  <button
+                    key={mode.id}
+                    type="button"
+                    disabled={phase === 'running'}
+                    onClick={() => selectInputMode(mode.id)}
+                    className={`flex min-w-0 items-center gap-2 border px-2.5 py-1.5 text-left transition ${active ? 'border-[#75492e] bg-[#75492e] text-white' : 'border-[#c5bfb4] bg-[#f8f6f0] text-[#77736a] hover:border-[#8f887d]'} disabled:cursor-not-allowed disabled:opacity-50`}
+                  >
+                    <span className={`grid h-4 w-4 shrink-0 place-items-center font-mono-term text-[8px] ${active ? 'bg-white/15' : 'bg-[#ebe6dc]'}`}>{index + 1}</span>
+                    <span className="truncate text-[9.5px] font-black">{mode.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex gap-2">
+              <textarea
+                value={pasted}
+                onChange={(event) => { setPasted(event.target.value); setInputError(null); }}
+                onKeyDown={(event) => {
+                  if (inputMode === 'share' && event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault();
+                    submitLearningRecord();
+                  }
+                }}
+                readOnly={phase === 'running'}
+                aria-label={selectedInputMode.label}
+                placeholder={selectedInputMode.placeholder}
+                className="light-scroll h-[102px] min-w-0 flex-1 resize-none border border-[#bdb8ad] bg-[#f8f6f0] px-3 py-2.5 text-[12px] leading-relaxed text-[#3c3a36] outline-none placeholder:text-[#aaa59b] focus:border-[#262624] disabled:opacity-60"
+              />
+              <div className="flex w-[152px] shrink-0 flex-col border border-[#c5bfb4] bg-[#e8e3d9] p-2.5">
+                <span className="font-mono-term text-[8px] tracking-wider text-[#8f887d]">{selectedInputMode.label}</span>
+                <span className={`mt-1 text-[9px] leading-snug ${inputError ? 'font-bold text-[#9f4025]' : 'text-[#77736a]'}`}>
+                  {inputError ?? selectedInputMode.hint}
+                </span>
+                <button
+                  type="button"
+                  disabled={phase === 'running' || pasted.trim().length === 0}
+                  onClick={submitLearningRecord}
+                  className="mt-auto border border-[#262624] bg-[#262624] px-3 py-2 text-[9.5px] font-black text-white transition hover:bg-[#46433d] disabled:cursor-not-allowed disabled:border-[#aaa59b] disabled:bg-[#aaa59b]"
+                >
+                  {phase === 'running' ? '분석 중…' : inputMode === 'share' ? '링크 불러오기 →' : '분석 시작 →'}
+                </button>
+              </div>
+            </div>
           </section>
         </main>
 
         <aside className={`shrink-0 overflow-hidden border-l border-[#262624] transition-all duration-500 ${noteLayout || studyMode ? 'w-0 border-transparent opacity-0' : 'w-[420px] opacity-100'}`}>
-          <StreamPanel lines={lines} activeStep={activeStep} phase={phase} />
+          <StreamPanel lines={lines} activeStep={activeStep} phase={phase} pipelineSteps={pipelineSteps} />
         </aside>
       </div>
     </div>

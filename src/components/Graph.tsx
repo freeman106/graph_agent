@@ -284,7 +284,8 @@ export default function Graph({ nodes, edges, selectedId, noteIds, filter, compa
           const isFocus = focusId === node.id;
           const isNeighbor = neighborIds.has(node.id);
           const frontier = frontierIds.has(node.id);
-          const isSupplement = Boolean(node.isNew && node.origin === 'conversation');
+          // 보충 개념의 출처는 영속 데이터다. isNew는 이번 실행의 등장 연출에만 쓴다.
+          const isSupplement = node.origin === 'conversation';
           const filtered = filter === 'weak'
             ? weakContext.has(node.id)
             : filter === 'frontier'

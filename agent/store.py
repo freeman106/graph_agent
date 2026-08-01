@@ -484,7 +484,11 @@ class GraphStore:
             raise ValueError(f"존재하지 않는 node_id: {node_id}")
 
         updated = node.model_dump()
-        updated["status"] = status
+        # 약점을 탐지한 코멘트는 화면의 약점 표시와 상태가 항상
+        # 일치하도록 저장 경계에서 weak 상태를 강제한다.
+        updated["status"] = (
+            "weak" if comment is not None and comment.weakpoint is not None else status
+        )
         if comment is not None:
             updated["comments"] = [*node.comments, comment]
         validated = Node.model_validate(updated)

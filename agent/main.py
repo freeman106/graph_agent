@@ -67,6 +67,8 @@ CONVERSATION_INSTRUCTIONS = """\
 
 5. 사용자가 되물었거나, 잘못 알고 있다가 정정된 지점이 있으면 그 개념을 눈여겨봐라.
    그게 이 그래프에서 가장 중요한 정보다. mark_progress 의 comment 로 남긴다.
+   comment.weakpoint 를 채우는 호출에서는 반드시 status 를 "weak" 로 설정하라.
+   약점을 기록하면서 status 를 "learned" 또는 "unlearned" 로 설정하지 마라.
 
 6. 코멘트의 quote 는 그 노드 document 안에 있는 문장을 그대로 넣어라. 프론트가
    문서에서 그 문자열을 찾아 하이라이트한다. 고쳐 쓰면 하이라이트가 걸리지 않는다.

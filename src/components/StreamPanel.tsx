@@ -1,11 +1,13 @@
 import { useEffect, useRef } from 'react';
 import { STEP_NAMES } from '../mock';
-import type { StreamLine, StreamLineKind } from '../view';
+import type { RuntimePipelineStep, StreamLine, StreamLineKind } from '../view';
 
 interface Props {
   lines: StreamLine[];
   activeStep: number;
   phase: 'idle' | 'running' | 'done';
+  /** null이면 고정 목 파이프라인, 배열이면 실제 툴 호출 목록이다. */
+  pipelineSteps: RuntimePipelineStep[] | null;
 }
 
 const KIND: Record<StreamLineKind, { className: string; prefix: string }> = {
@@ -23,12 +25,20 @@ const KIND: Record<StreamLineKind, { className: string; prefix: string }> = {
 
 const STEP_LABELS = ['대화 읽기', '기존 노드 대조', '지도에 배치', '약점 탐지', '기록 갱신', '결과 검수'];
 
-export default function StreamPanel({ lines, activeStep, phase }: Props) {
+export default function StreamPanel({ lines, activeStep, phase, pipelineSteps }: Props) {
   const logRef = useRef<HTMLDivElement>(null);
+  const pipelineRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [lines.length]);
+
+  useEffect(() => {
+    if (pipelineRef.current) pipelineRef.current.scrollTop = pipelineRef.current.scrollHeight;
+  }, [pipelineSteps?.length]);
+
+  const isLive = pipelineSteps !== null;
+  const finishedCalls = pipelineSteps?.filter((step) => step.status === 'done').length ?? 0;
 
   return (
     <div className="flex h-full flex-col bg-[#171a1b] text-[#d4d0c7]">
@@ -44,25 +54,52 @@ export default function StreamPanel({ lines, activeStep, phase }: Props) {
 
       <section className="shrink-0 border-b border-[#3b3f40] px-4 py-3">
         <div className="mb-2 flex items-center justify-between font-mono-term text-[8.5px] tracking-wider text-[#686f72]">
-          <span>PIPELINE</span>
-          <span>{Math.max(0, Math.min(activeStep + 1, STEP_NAMES.length))} / {STEP_NAMES.length}</span>
+          <span>{isLive ? 'LIVE TOOL CALLS' : 'PIPELINE'}</span>
+          <span>
+            {isLive
+              ? `${finishedCalls} / ${pipelineSteps.length}`
+              : `${Math.max(0, Math.min(activeStep + 1, STEP_NAMES.length))} / ${STEP_NAMES.length}`}
+          </span>
         </div>
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-          {STEP_NAMES.map((name, index) => {
-            const complete = index < activeStep || activeStep >= STEP_NAMES.length;
-            const active = index === activeStep;
-            return (
-              <div key={name} className="flex min-w-0 items-center gap-2">
-                <span className={`grid h-4 w-4 shrink-0 place-items-center border font-mono-term text-[8px] ${complete ? 'border-[#6fa27c] text-[#8fbc9a]' : active ? 'border-[#e47c57] text-[#e9a184]' : 'border-[#3b3f40] text-[#565c5f]'}`}>
-                  {complete ? '✓' : index + 1}
-                </span>
-                <div className="min-w-0">
-                  <div className={`truncate text-[9.5px] font-bold ${active ? 'text-[#f0ede6]' : complete ? 'text-[#899094]' : 'text-[#565c5f]'}`}>{STEP_LABELS[index]}</div>
-                  <div className="truncate font-mono-term text-[7.5px] text-[#4d5355]">{name}</div>
-                </div>
-              </div>
-            );
-          })}
+        <div ref={pipelineRef} className="max-h-44 overflow-y-auto">
+          {isLive ? (
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+              {pipelineSteps.length === 0 && (
+                <div className="col-span-2 font-mono-term text-[9px] text-[#565c5f]">모델 판단 및 툴 호출 대기</div>
+              )}
+              {pipelineSteps.map((step, index) => {
+                const complete = step.status === 'done';
+                return (
+                  <div key={step.id} className="flex min-w-0 items-center gap-2">
+                    <span className={`grid h-4 w-4 shrink-0 place-items-center border font-mono-term text-[8px] ${complete ? 'border-[#6fa27c] text-[#8fbc9a]' : 'animate-pulse border-[#e47c57] text-[#e9a184]'}`}>
+                      {complete ? '✓' : index + 1}
+                    </span>
+                    <div className={`truncate font-mono-term text-[9px] ${complete ? 'text-[#899094]' : 'font-bold text-[#f0ede6]'}`}>
+                      {step.tool}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+              {STEP_NAMES.map((name, index) => {
+                const complete = index < activeStep || activeStep >= STEP_NAMES.length;
+                const active = index === activeStep;
+                return (
+                  <div key={name} className="flex min-w-0 items-center gap-2">
+                    <span className={`grid h-4 w-4 shrink-0 place-items-center border font-mono-term text-[8px] ${complete ? 'border-[#6fa27c] text-[#8fbc9a]' : active ? 'border-[#e47c57] text-[#e9a184]' : 'border-[#3b3f40] text-[#565c5f]'}`}>
+                      {complete ? '✓' : index + 1}
+                    </span>
+                    <div className="min-w-0">
+                      <div className={`truncate text-[9.5px] font-bold ${active ? 'text-[#f0ede6]' : complete ? 'text-[#899094]' : 'text-[#565c5f]'}`}>{STEP_LABELS[index]}</div>
+                      <div className="truncate font-mono-term text-[7.5px] text-[#4d5355]">{name}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </section>
 

@@ -47,7 +47,7 @@ button {
   top: 0;
   left: 0;
   width: 100%;
-  height: calc(100% - 154px);
+  height: calc(100% - 218px);
   transition:
     top 700ms cubic-bezier(.22, .8, .25, 1),
     left 700ms cubic-bezier(.22, .8, .25, 1),
