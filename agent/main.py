@@ -69,8 +69,20 @@ INSTRUCTIONS = """\
 6. 끝나면 무엇을 어떻게 바꿨는지 짧게 정리하라.
 """
 
-# 지금 물려 있는 툴. B 가 나머지를 채우면 여기에 추가한다.
-TOOLS = [tool_module.search_nodes, tool_module.create_node]
+# 계약 B 의 여덟 개가 전부 물려 있다. 조회 먼저, 상태 변경 나중 순으로 둔다 —
+# 순서를 강제하지는 않지만 모델이 목록을 읽는 순서이기도 하다.
+TOOLS = [
+    # 조회
+    tool_module.search_nodes,
+    tool_module.get_neighbors,
+    tool_module.lookup_reference,
+    tool_module.quote_conversation,
+    # 변경
+    tool_module.create_node,
+    tool_module.link_nodes,
+    tool_module.merge_nodes,
+    tool_module.mark_progress,
+]
 
 
 def build_agent() -> Agent:
