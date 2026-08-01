@@ -1,37 +1,13 @@
-import { NEW_STYLE, STATUS_STYLE } from '../view';
-
-const ITEMS = [
-  { ...STATUS_STYLE.learned },
-  { ...STATUS_STYLE.unlearned },
-  { ...STATUS_STYLE.weak },
-  { label: NEW_STYLE.label, fill: NEW_STYLE.fill, stroke: NEW_STYLE.stroke, dashed: false },
-];
-
-/** 그래프 위에 항상 떠 있는 범례. 노드 패널이 열려도 사라지지 않는다. */
 export default function Legend() {
   return (
-    <div className="pointer-events-none absolute right-4 bottom-3 z-10 rounded-lg border border-slate-200 bg-white/90 px-3 py-2.5 backdrop-blur">
-      <div className="mb-1.5 text-[10px] font-bold tracking-wider text-slate-400">범례</div>
-      <ul className="flex flex-col gap-1">
-        {ITEMS.map((l) => (
-          <li key={l.label} className="flex items-center gap-2">
-            <span
-              className="h-3 w-3 shrink-0 rounded-full"
-              style={{
-                background: l.fill,
-                border: `1.5px ${l.dashed ? 'dashed' : 'solid'} ${l.stroke}`,
-              }}
-            />
-            <span className="text-[11px] leading-tight text-slate-600">{l.label}</span>
-          </li>
-        ))}
-        <li className="flex items-center gap-2">
-          <span className="grid h-3 w-3 shrink-0 place-items-center rounded-full bg-red-600 text-[8px] font-black text-white">
-            !
-          </span>
-          <span className="text-[11px] leading-tight text-slate-600">약점 배지</span>
-        </li>
-      </ul>
+    <div className="pointer-events-none absolute bottom-3 left-4 z-10 flex items-center gap-4 border border-[#bdb8ad] bg-[#f7f5ef]/94 px-3 py-2 text-[9px] font-bold text-[#77736a]">
+      <span className="font-black tracking-[0.14em] text-[#3c3a36]">MAP KEY</span>
+      <span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-full bg-[#262624]" /> 학습</span>
+      <span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-full border border-dashed border-[#77736a]" /> 미학습</span>
+      <span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rotate-45 bg-[#d85b35]" /> 막힌 지점</span>
+      <span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 bg-[#255c99]" /> 이번 기록</span>
+      <span className="h-3 border-l border-[#c9c4ba]" />
+      <span>실선 선행 · 긴 점선 구성 · 짧은 점선 대비</span>
     </div>
   );
 }

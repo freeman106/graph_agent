@@ -1,10 +1,11 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RELATION_LABEL, type Node } from '../contract/schema';
 import Graph from './components/Graph';
 import Legend from './components/Legend';
 import NodeDetail from './components/NodeDetail';
-import SideRail from './components/SideRail';
+import NoteWorkspace from './components/NoteWorkspace';
 import StreamPanel from './components/StreamPanel';
+import { anchorForNode, NOTE_COMMENTS } from './lectureNote';
 import { NODE_LAYOUT, placeNewNode, type Point } from './layout';
 import {
   CONVERSATION_META,
@@ -18,77 +19,175 @@ import {
   TOOL_STEPS,
   WEAKPOINT_NODE_ID,
 } from './mock';
-import type { RuntimeEdge, RuntimeNode, StreamLine, StreamLineKind } from './view';
+import type { RuntimeEdge, RuntimeNode, RuntimeNoteComment, StreamLine, StreamLineKind } from './view';
 
 type Phase = 'idle' | 'running' | 'done';
 
-const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, Math.round(ms * 0.42)));
 
-/** 계약 Node 에 프론트 좌표를 붙여 렌더링용 노드로 만든다. */
 function withLayout(nodes: Node[]): RuntimeNode[] {
-  return nodes.map((n) => ({ ...n, ...(NODE_LAYOUT[n.id] ?? { x: 0, y: 0 }) }));
+  return nodes.map((node) => ({ ...node, ...(NODE_LAYOUT[node.id] ?? { x: 0, y: 0 }) }));
 }
 
 function pointsOf(nodes: RuntimeNode[]): Record<string, Point> {
-  return Object.fromEntries(nodes.map((n) => [n.id, { x: n.x, y: n.y }]));
+  return Object.fromEntries(nodes.map((node) => [node.id, { x: node.x, y: node.y }]));
 }
 
-/** 스트림 줄에 개념 이름을 찍기 위한 정적 라벨 맵 */
 const NAMES = new Map<string, string>([
-  ...INITIAL_NODES.map((n) => [n.id, n.name] as const),
-  ...PLACEMENTS.map((p) => [p.node.id, p.node.name] as const),
+  ...INITIAL_NODES.map((node) => [node.id, node.name] as const),
+  ...PLACEMENTS.map((placement) => [placement.node.id, placement.node.name] as const),
 ]);
 const nameOf = (id: string) => NAMES.get(id) ?? id;
+const weakpointKey = (nodeId: string, index: number) => `${nodeId}::${index}`;
 
 export default function App() {
   const [nodes, setNodes] = useState<RuntimeNode[]>(() => withLayout(INITIAL_NODES));
-  const [edges, setEdges] = useState<RuntimeEdge[]>(() => INITIAL_EDGES.map((e) => ({ ...e })));
+  const [edges, setEdges] = useState<RuntimeEdge[]>(() => INITIAL_EDGES.map((edge) => ({ ...edge })));
   const [lines, setLines] = useState<StreamLine[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>('idle');
   const [activeStep, setActiveStep] = useState(-1);
   const [pasted, setPasted] = useState('');
+  const [mapFilter, setMapFilter] = useState('all');
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [noteMode, setNoteMode] = useState(false);
+  const [activeNoteAnchor, setActiveNoteAnchor] = useState('p-summary-1');
+  const [noteComments, setNoteComments] = useState<RuntimeNoteComment[]>(() => NOTE_COMMENTS.map((comment) => ({ ...comment })));
+  const [resolvedWeakpoints, setResolvedWeakpoints] = useState<Set<string>>(() => new Set());
 
   const lineId = useRef(0);
   const runToken = useRef(0);
+  const graphSurfaceRef = useRef<HTMLElement | null>(null);
 
-  const push = useCallback((kind: StreamLineKind, text: string) => {
-    setLines((prev) => [...prev, { id: ++lineId.current, kind, text }]);
+  useEffect(() => {
+    const syncFullscreen = () => setIsFullscreen(document.fullscreenElement === graphSurfaceRef.current);
+    document.addEventListener('fullscreenchange', syncFullscreen);
+    return () => document.removeEventListener('fullscreenchange', syncFullscreen);
   }, []);
 
-  const noteIds = useMemo(
-    () => new Set(nodes.filter((n) => n.weakpoints.length > 0).map((n) => n.id)),
-    [nodes],
-  );
-  const selectedNode = selectedId ? (nodes.find((n) => n.id === selectedId) ?? null) : null;
+  const push = useCallback((kind: StreamLineKind, text: string) => {
+    const id = ++lineId.current;
+    setLines((previous) => [...previous, { id, kind, text }]);
+  }, []);
+
+  const annotationsVisible = activeStep >= 3 || phase === 'done';
+  const noteIds = useMemo(() => {
+    const ids = new Set(nodes.filter((node) => node.weakpoints.length > 0).map((node) => node.id));
+    noteComments
+      .filter((comment) => annotationsVisible || !comment.revealOnRun)
+      .forEach((comment) => ids.add(comment.nodeId));
+    return ids;
+  }, [nodes, annotationsVisible, noteComments]);
+  const selectedNode = selectedId ? (nodes.find((node) => node.id === selectedId) ?? null) : null;
+  const learnedCount = nodes.filter((node) => node.status === 'learned').length;
+  const weakCount = nodes.filter((node) => node.status === 'weak').length;
+  const openCount = nodes.filter((node) => node.status === 'unlearned').length;
+  const newCount = nodes.filter((node) => node.isNew).length;
 
   const reset = () => {
     runToken.current++;
     setNodes(withLayout(INITIAL_NODES));
-    setEdges(INITIAL_EDGES.map((e) => ({ ...e })));
+    setEdges(INITIAL_EDGES.map((edge) => ({ ...edge })));
     setLines([]);
     setSelectedId(null);
     setPhase('idle');
     setActiveStep(-1);
     setPasted('');
+    setMapFilter('all');
+    setNoteMode(false);
+    setActiveNoteAnchor('p-summary-1');
+    setNoteComments(NOTE_COMMENTS.map((comment) => ({ ...comment })));
+    setResolvedWeakpoints(new Set());
   };
 
-  /* ──────────────────── 실행: 전부 타이머로 흐름만 흉내 낸다 ──────────────────── */
+  const openNote = (nodeId: string) => {
+    setSelectedId(nodeId);
+    setActiveNoteAnchor(anchorForNode(nodeId));
+    setNoteMode(true);
+  };
+
+  const navigateInNote = (nodeId: string, anchorId: string) => {
+    setSelectedId(nodeId);
+    setActiveNoteAnchor(anchorId);
+  };
+
+  const addNoteComment = (comment: RuntimeNoteComment, sourceText: string) => {
+    setNoteComments((previous) => [...previous, comment]);
+    setSelectedId(comment.nodeId);
+    if (comment.anchorId) setActiveNoteAnchor(comment.anchorId);
+    setNodes((previous) => previous.map((node) => {
+      if (node.id !== comment.nodeId) return node;
+      return {
+        ...node,
+        status: 'weak',
+        flash: true,
+        weakpoints: [
+          ...node.weakpoints,
+          {
+            description: `${comment.title}: ${comment.body}`,
+            misconception: null,
+            correction: null,
+            evidence: [{ index: 0, speaker: 'user', text: sourceText }],
+            source_conversation_id: `note-selection-${comment.id}`,
+          },
+        ],
+      };
+    }));
+    window.setTimeout(() => {
+      setNodes((previous) => previous.map((node) => node.flash ? { ...node, flash: false } : node));
+    }, 760);
+    push('detail', `  ✎ ${nameOf(comment.nodeId)} — 노트 선택 영역에서 새 코멘트와 막힌 지점 추가`);
+  };
+
+  const toggleWeakpoint = (nodeId: string, index: number, checked: boolean) => {
+    const next = new Set(resolvedWeakpoints);
+    const key = weakpointKey(nodeId, index);
+    if (checked) next.add(key);
+    else next.delete(key);
+    setResolvedWeakpoints(next);
+    setNodes((previous) => previous.map((node) => {
+      if (node.id !== nodeId) return node;
+      const allResolved = node.weakpoints.length > 0
+        && node.weakpoints.every((_, weakpointIndex) => next.has(weakpointKey(node.id, weakpointIndex)));
+      return { ...node, status: allResolved ? 'learned' : 'weak', flash: allResolved };
+    }));
+    if (checked) {
+      window.setTimeout(() => {
+        setNodes((previous) => previous.map((node) => node.flash ? { ...node, flash: false } : node));
+      }, 760);
+    }
+  };
+
+  const toggleLearned = (nodeId: string, checked: boolean) => {
+    setNodes((previous) => previous.map((node) => {
+      if (node.id !== nodeId) return node;
+      const hasOpenWeakpoint = node.weakpoints.some((_, index) => !resolvedWeakpoints.has(weakpointKey(node.id, index)));
+      return { ...node, status: checked ? 'learned' : hasOpenWeakpoint ? 'weak' : 'unlearned', flash: checked };
+    }));
+    if (checked) {
+      window.setTimeout(() => {
+        setNodes((previous) => previous.map((node) => node.flash ? { ...node, flash: false } : node));
+      }, 760);
+    }
+  };
+
+  const selectFromGraph = (nodeId: string | null) => {
+    setSelectedId(nodeId);
+    if (noteMode && nodeId) setActiveNoteAnchor(anchorForNode(nodeId));
+  };
 
   const run = async (text: string) => {
-    const my = ++runToken.current;
-    const alive = () => runToken.current === my;
+    const token = ++runToken.current;
+    const alive = () => runToken.current === token;
 
     setPasted(text);
     setPhase('running');
     setSelectedId(null);
-
     push('system', `대화 입력 감지 — ${text.length.toLocaleString()}자 / ${CONVERSATION_META.turns}턴`);
     push('system', '단계별 승인 없이 끝까지 실행합니다.');
     await wait(650);
     if (!alive()) return;
 
-    /* ── 1. parse_conversation ── */
     setActiveStep(0);
     const s1 = TOOL_STEPS.parse_conversation;
     push('call', `[호출 중] ${s1.tool}(${s1.args})`);
@@ -96,15 +195,11 @@ export default function App() {
     if (!alive()) return;
     push('result', `[결과] ${s1.result}`);
     push('reason', s1.reason);
-    push(
-      'detail',
-      'Self-Attention · Masked Attention · Query/Key/Value · Multi-Head Attention · Grouped-Query Attention',
-    );
+    push('detail', 'Self-Attention · Masked Attention · Query/Key/Value · Multi-Head Attention · Grouped-Query Attention');
     push('detail', 'KV Cache · Autoregressive Decoding · Incremental Decoding · Flash Attention');
     await wait(1400);
     if (!alive()) return;
 
-    /* ── 2. match_nodes ── */
     setActiveStep(1);
     const s2 = TOOL_STEPS.match_nodes;
     push('call', `[호출 중] ${s2.tool}(${s2.args})`);
@@ -112,53 +207,44 @@ export default function App() {
     if (!alive()) return;
     push('result', `[결과] ${s2.result}`);
     push('reason', s2.reason);
-    push(
-      'detail',
-      '일치 → Self-Attention, Masked Attention, Query/Key/Value, Multi-Head Attention, Grouped-Query Attention',
-    );
+    push('detail', '일치 → Self-Attention, Masked Attention, Query/Key/Value, Multi-Head Attention, Grouped-Query Attention');
     push('detail', '신규 → KV Cache, Autoregressive Decoding, Incremental Decoding, Flash Attention');
     await wait(1300);
     if (!alive()) return;
 
-    /* ── 3. place_nodes — 대표 장면 ── */
     setActiveStep(2);
     const s3 = TOOL_STEPS.place_nodes;
     push('call', `[호출 중] ${s3.tool}(${s3.args})`);
     await wait(900);
     if (!alive()) return;
 
-    for (const p of PLACEMENTS) {
-      setNodes((prev) => {
-        const point = placeNewNode(p.node.id, p.anchors, pointsOf(prev));
-        return [...prev, { ...p.node, ...point, isNew: true, justAdded: true }];
+    for (const placement of PLACEMENTS) {
+      setNodes((previous) => {
+        const point = placeNewNode(placement.node.id, placement.anchors, pointsOf(previous));
+        return [...previous, { ...placement.node, ...point, isNew: true, justAdded: true }];
       });
-      push('place', `${p.node.name} — 그래프에 배치`);
+      push('place', `${placement.node.name} — 그래프에 배치`);
       await wait(520);
       if (!alive()) return;
 
-      for (const e of p.edges) {
-        setEdges((prev) => [...prev, { ...e, isNew: true, justAdded: true }]);
-        push(
-          'edge',
-          `  └─[${RELATION_LABEL[e.relation]}]→  ${nameOf(e.from_id)} → ${nameOf(e.to_id)}`,
-        );
+      for (const edge of placement.edges) {
+        setEdges((previous) => [...previous, { ...edge, isNew: true, justAdded: true }]);
+        push('edge', `  └─[${RELATION_LABEL[edge.relation]}]→  ${nameOf(edge.from_id)} → ${nameOf(edge.to_id)}`);
         await wait(420);
         if (!alive()) return;
       }
-      push('reason', `  ${p.reason}`);
+      push('reason', `  ${placement.reason}`);
       await wait(560);
       if (!alive()) return;
     }
 
-    // 등장 강조를 끄고 각자의 상태 색으로 정착시킨다.
-    setNodes((prev) => prev.map((n) => (n.justAdded ? { ...n, justAdded: false } : n)));
-    setEdges((prev) => prev.map((e) => (e.justAdded ? { ...e, justAdded: false } : e)));
+    setNodes((previous) => previous.map((node) => (node.justAdded ? { ...node, justAdded: false } : node)));
+    setEdges((previous) => previous.map((edge) => (edge.justAdded ? { ...edge, justAdded: false } : edge)));
     push('result', `[결과] ${s3.result}`);
     push('reason', s3.reason);
     await wait(1400);
     if (!alive()) return;
 
-    /* ── 4. detect_weakpoints ── */
     setActiveStep(3);
     const s4 = TOOL_STEPS.detect_weakpoints;
     push('call', `[호출 중] ${s4.tool}(${s4.args})`);
@@ -166,201 +252,235 @@ export default function App() {
     if (!alive()) return;
     push('result', `[결과] ${s4.result}`);
     push('reason', s4.reason);
-    for (const ev of DETECTED_WEAKPOINT.evidence.slice(0, 2)) {
-      push('detail', `  #${ev.index} ${ev.speaker === 'user' ? '나' : 'ChatGPT'}: ${ev.text.slice(0, 70)}…`);
+    push('detail', '  ▣ 강의노트 관련 문장 3곳 일치 → 하이라이트와 코멘트 앵커 생성');
+    push('detail', '  □ Flash Attention — 일치 문장 없음 → 코멘트만 보존');
+    for (const evidence of DETECTED_WEAKPOINT.evidence.slice(0, 2)) {
+      push('detail', `  #${evidence.index} ${evidence.speaker === 'user' ? '나' : 'ChatGPT'}: ${evidence.text.slice(0, 70)}…`);
     }
     await wait(1300);
     if (!alive()) return;
 
-    /* ── 5. mark_progress — 약점과 노트를 그래프에 쓴다 ── */
     setActiveStep(4);
     const s5 = TOOL_STEPS.write_lecture_note;
     push('call', `[호출 중] ${s5.tool}(${s5.args})`);
     await wait(900);
     if (!alive()) return;
-
-    setNodes((prev) =>
-      prev.map((n) =>
-        n.id === WEAKPOINT_NODE_ID
-          ? { ...n, status: 'weak', weakpoints: [DETECTED_WEAKPOINT], flash: true }
-          : n,
+    setNodes((previous) =>
+      previous.map((node) =>
+        node.id === WEAKPOINT_NODE_ID
+          ? { ...node, status: 'weak', weakpoints: [DETECTED_WEAKPOINT], flash: true }
+          : node,
       ),
     );
     push('detail', `  ✎ ${nameOf(WEAKPOINT_NODE_ID)} — 약점 1건 · 정정 전·후 · 인용 ${DETECTED_WEAKPOINT.evidence.length}건`);
     await wait(700);
     if (!alive()) return;
-    setNodes((prev) => prev.map((n) => (n.flash ? { ...n, flash: false } : n)));
-
-    for (const u of NOTE_UPDATES) {
-      setNodes((prev) =>
-        prev.map((n) => (n.id === u.node_id ? { ...n, summary: u.summary } : n)),
-      );
-      push('detail', `  ✎ ${nameOf(u.node_id)} — 요약 갱신`);
+    setNodes((previous) => previous.map((node) => (node.flash ? { ...node, flash: false } : node)));
+    for (const update of NOTE_UPDATES) {
+      setNodes((previous) => previous.map((node) => (node.id === update.node_id ? { ...node, summary: update.summary } : node)));
+      push('detail', `  ✎ ${nameOf(update.node_id)} — 요약 갱신`);
       await wait(340);
       if (!alive()) return;
     }
+    push('detail', '  ✎ 오른쪽 코멘트 4건 연결 · 관련 노드 이동 경로 4건 생성');
     push('result', `[결과] ${s5.result}`);
     push('reason', s5.reason);
     await wait(1300);
     if (!alive()) return;
 
-    /* ── 6. review_graph — 자기 결과의 문제를 스스로 잡아낸다 ── */
     setActiveStep(5);
     const s6 = TOOL_STEPS.review_graph;
     push('call', `[호출 중] ${s6.tool}(${s6.args})`);
     await wait(1400);
     if (!alive()) return;
-
-    for (const f of REVIEW_FINDINGS) {
-      push('warn', f.claim);
-      push('reason', `  ${f.reason}`);
+    for (const finding of REVIEW_FINDINGS) {
+      push('warn', finding.claim);
+      push('reason', `  ${finding.reason}`);
       await wait(950);
       if (!alive()) return;
-
-      if (f.fix.type === 'mergeNode') {
-        const { from, into } = f.fix;
-        setNodes((prev) =>
-          prev.map((n) =>
-            n.id === from ? { ...n, removing: true } : n.id === into ? { ...n, flash: true } : n,
-          ),
-        );
-        setEdges((prev) =>
-          prev.map((e) => (e.from_id === from || e.to_id === from ? { ...e, removing: true } : e)),
-        );
+      if (finding.fix.type === 'mergeNode') {
+        const { from, into } = finding.fix;
+        setNodes((previous) => previous.map((node) => node.id === from ? { ...node, removing: true } : node.id === into ? { ...node, flash: true } : node));
+        setEdges((previous) => previous.map((edge) => edge.from_id === from || edge.to_id === from ? { ...edge, removing: true } : edge));
         await wait(460);
         if (!alive()) return;
-        setNodes((prev) => prev.filter((n) => n.id !== from));
-        setEdges((prev) => prev.filter((e) => e.from_id !== from && e.to_id !== from));
+        setNodes((previous) => previous.filter((node) => node.id !== from));
+        setEdges((previous) => previous.filter((edge) => edge.from_id !== from && edge.to_id !== from));
         await wait(900);
         if (!alive()) return;
-        setNodes((prev) => prev.map((n) => (n.flash ? { ...n, flash: false } : n)));
+        setNodes((previous) => previous.map((node) => (node.flash ? { ...node, flash: false } : node)));
       } else {
-        const { edgeId } = f.fix;
-        setEdges((prev) => prev.map((e) => (e.id === edgeId ? { ...e, removing: true } : e)));
+        const { edgeId } = finding.fix;
+        setEdges((previous) => previous.map((edge) => edge.id === edgeId ? { ...edge, removing: true } : edge));
         await wait(460);
         if (!alive()) return;
-        setEdges((prev) => prev.filter((e) => e.id !== edgeId));
+        setEdges((previous) => previous.filter((edge) => edge.id !== edgeId));
       }
-
-      push('fix', f.applied);
+      push('fix', finding.applied);
       await wait(1200);
       if (!alive()) return;
     }
-
     push('result', `[결과] ${s6.result}`);
     push('reason', s6.reason);
     await wait(700);
     if (!alive()) return;
-    push(
-      'done',
-      `실행 완료 — 노드 ${INITIAL_NODES.length + 3}개 / 간선 ${INITIAL_EDGES.length + 8}개. 노드를 클릭하면 노트가 열립니다.`,
-    );
+    push('done', `실행 완료 — 노드 ${INITIAL_NODES.length + 3}개 / 간선 ${INITIAL_EDGES.length + 8}개. 노드 카드의 "노트에서 보기"로 근거를 확인하세요.`);
     setActiveStep(6);
     setPhase('done');
   };
 
-  /** 붙여넣는 순간 자동 실행 — 실행 버튼 없음 */
-  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+  const handlePaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
     if (phase !== 'idle') return;
-    const text = e.clipboardData.getData('text');
+    const text = event.clipboardData.getData('text');
     if (text.trim().length < 20) return;
-    e.preventDefault();
+    event.preventDefault();
     void run(text);
   };
 
+  const toggleFullscreen = async () => {
+    if (document.fullscreenElement === graphSurfaceRef.current) {
+      await document.exitFullscreen();
+    } else {
+      await graphSurfaceRef.current?.requestFullscreen();
+    }
+  };
+
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-slate-100 text-slate-900">
-      <header className="flex shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-5 py-2.5">
-        <div className="grid h-6 w-6 place-items-center rounded-md bg-slate-900 text-[13px] font-black text-white">
-          ▚
+    <div className="app-shell flex h-screen min-w-[1120px] flex-col overflow-hidden text-[#20201e]">
+      <header className="flex h-14 shrink-0 items-center border-b border-[#262624] bg-[#f3f0e8] px-5">
+        <div className="mr-4 grid h-7 w-7 place-items-center border border-[#262624] bg-[#262624] text-[12px] font-black text-[#f3f0e8]">GM</div>
+        <div className="flex items-baseline gap-3">
+          <h1 className="text-[15px] font-black tracking-[-0.02em]">GRAPHMIND</h1>
+          <span className="text-[10px] font-semibold tracking-[0.18em] text-[#77736a]">개인 지식 지도</span>
         </div>
-        <h1 className="text-[15px] font-bold tracking-tight">지식그래프 학습 도우미</h1>
-        <span className="text-[12px] text-slate-400">
-          공부한 대화를 붙여넣으면 개념이 추출되어 기존 그래프에 자동으로 연결됩니다
-        </span>
-        <span className="ml-auto rounded-full bg-slate-100 px-2.5 py-1 font-mono-term text-[10.5px] text-slate-500">
-          prototype · mock data
-        </span>
+        <div className="ml-auto flex h-full items-center border-x border-[#d2cec4]">
+          {[
+            ['학습', learnedCount],
+            ['약점', weakCount],
+            ['미학습', openCount],
+            ['이번 기록', newCount],
+          ].map(([label, value]) => (
+            <div key={label} className="flex h-full min-w-[74px] flex-col justify-center border-r border-[#d2cec4] px-3 last:border-r-0">
+              <span className="font-mono-term text-[9px] uppercase tracking-wider text-[#8c877d]">{label}</span>
+              <span className="mt-0.5 text-[14px] font-black tabular-nums">{value}</span>
+            </div>
+          ))}
+        </div>
+        <div className="ml-4 flex items-center gap-2 text-[10px] font-bold text-[#666259]">
+          <span className={`h-2 w-2 ${phase === 'running' ? 'animate-pulse bg-[#d85b35]' : phase === 'done' ? 'bg-[#255c99]' : 'bg-[#aaa59b]'}`} />
+          {phase === 'idle' ? '대기 중' : phase === 'running' ? '지도 갱신 중' : '기록 완료'}
+        </div>
       </header>
 
       <div className="flex min-h-0 flex-1">
-        {/* 좌측: 지식그래프 + 붙여넣기 */}
-        <div className="flex min-w-0 flex-1 flex-col">
-          <div className="relative min-h-0 flex-1 bg-white">
-            <div className="pointer-events-none absolute top-3 left-4 z-10">
-              <div className="text-[11px] font-bold tracking-wider text-slate-400">지식그래프</div>
-              <div className="font-mono-term text-[11px] text-slate-400">
-                {nodes.length} nodes · {edges.length} edges
-              </div>
-            </div>
-            <Graph
+        <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-[#f7f5ef]">
+          {noteMode && (
+            <NoteWorkspace
+              activeAnchorId={activeNoteAnchor}
+              annotationsVisible={annotationsVisible}
+              comments={noteComments}
               nodes={nodes}
-              edges={edges}
-              selectedId={selectedId}
-              noteIds={noteIds}
-              onSelect={setSelectedId}
+              onCreateComment={addNoteComment}
+              onClose={() => setNoteMode(false)}
+              onNavigate={navigateInNote}
             />
-            <Legend />
-          </div>
+          )}
 
-          <div className="shrink-0 border-t border-slate-200 bg-white px-4 pt-3 pb-3">
-            <div className="mb-1.5 flex items-baseline gap-2">
-              <span className="text-[11px] font-bold tracking-wider text-slate-400">
-                대화 붙여넣기
-              </span>
-              <span className="text-[11px] text-slate-400">
-                붙여넣는 즉시 자동 실행됩니다 · 단계별 승인 없음
-              </span>
-              <span className="ml-auto text-[11px]">
+          <section
+            ref={graphSurfaceRef}
+            className={`graph-surface graph-stage z-40 overflow-hidden bg-[#f7f5ef] ${noteMode ? 'graph-stage-note border border-[#262624] shadow-[8px_8px_0_rgba(38,38,36,0.15)]' : ''}`}
+          >
+            <div className={`absolute top-0 right-0 left-0 z-20 flex items-center border-b border-[#d7d3ca] bg-[#f7f5ef]/95 transition-all ${noteMode ? 'h-[42px] px-3' : 'h-[58px] px-5'}`}>
+              <div>
+                <div className={`${noteMode ? 'text-[8px]' : 'text-[10px]'} font-black tracking-[0.16em] text-[#77736a]`}>TRANSFORMER / COGNITIVE ATLAS</div>
+                <div className={`${noteMode ? 'mt-0.5 text-[8px]' : 'mt-1 text-[10px]'} font-mono-term text-[#9a958b]`}>{nodes.length} CONCEPTS · {edges.length} RELATIONS</div>
+              </div>
+              {!noteMode && <div className="ml-auto flex items-center gap-1 border border-[#bdb8ad] bg-[#f7f5ef] p-[3px]">
+                {[
+                  ['all', '전체'],
+                  ['weak', '막힌 지점'],
+                  ['frontier', '다음 경계'],
+                ].map(([value, label]) => (
+                  <button
+                    key={value}
+                    onClick={() => setMapFilter(value)}
+                    className={`px-3 py-1.5 text-[10px] font-bold transition ${mapFilter === value ? 'bg-[#262624] text-[#f7f5ef]' : 'text-[#77736a] hover:bg-[#e8e4db]'}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+                <span className="mx-1 h-5 border-l border-[#bdb8ad]" />
+                <button
+                  onClick={() => setSelectedId(null)}
+                  disabled={!selectedId}
+                  className="px-2.5 py-1.5 text-[10px] font-bold text-[#5f5b53] transition hover:bg-[#e8e4db] disabled:cursor-default disabled:opacity-30"
+                >
+                  ↙ 전체 보기
+                </button>
+                <button
+                  onClick={() => void toggleFullscreen()}
+                  data-testid="graph-fullscreen"
+                  className={`px-2.5 py-1.5 text-[10px] font-bold transition ${isFullscreen ? 'bg-[#255c99] text-white' : 'text-[#5f5b53] hover:bg-[#e8e4db]'}`}
+                >
+                  {isFullscreen ? '× 전체 화면 종료' : '⛶ 전체 화면'}
+                </button>
+              </div>}
+              {noteMode && selectedNode && (
+                <div className="ml-auto flex max-w-[145px] items-center gap-2">
+                  <span className="h-2 w-2 shrink-0 bg-[#255c99]" />
+                  <span className="truncate text-[9px] font-black text-[#3c3a36]">{selectedNode.name}</span>
+                </div>
+              )}
+            </div>
+
+            <div className={`absolute inset-0 ${noteMode ? 'top-[42px]' : 'top-[58px]'}`}>
+              <Graph nodes={nodes} edges={edges} selectedId={selectedId} noteIds={noteIds} filter={mapFilter} onSelect={selectFromGraph} compact={noteMode} />
+              {!noteMode && <Legend />}
+              {selectedNode && !noteMode && (
+                <NodeDetail
+                  node={selectedNode}
+                  nodes={nodes}
+                  edges={edges}
+                  resolvedWeakpoints={resolvedWeakpoints}
+                  onSelect={setSelectedId}
+                  onOpenNote={openNote}
+                  onToggleLearned={toggleLearned}
+                  onToggleWeakpoint={toggleWeakpoint}
+                  onClose={() => setSelectedId(null)}
+                />
+              )}
+            </div>
+          </section>
+
+          <section className={`absolute right-0 bottom-0 left-0 shrink-0 overflow-hidden border-t border-[#262624] bg-[#efebe2] px-5 transition-all duration-500 ${noteMode ? 'pointer-events-none h-0 border-transparent py-0 opacity-0' : 'h-[154px] py-4 opacity-100'}`}>
+            <div className="mb-2 flex items-center">
+              <div>
+                <span className="text-[10px] font-black tracking-[0.14em]">새 학습 기록</span>
+                <span className="ml-3 text-[10px] text-[#827d73]">대화를 붙여넣으면 오른쪽 로그와 지도가 동시에 갱신됩니다.</span>
+              </div>
+              <div className="ml-auto flex items-center gap-3 text-[10px]">
                 {phase === 'idle' ? (
-                  <button
-                    onClick={() => void run(SAMPLE_CONVERSATION)}
-                    className="text-slate-400 underline decoration-dotted underline-offset-2 hover:text-slate-600"
-                  >
-                    샘플 대화 붙여넣기 (데모용)
-                  </button>
+                  <button onClick={() => void run(SAMPLE_CONVERSATION)} className="border-b border-[#255c99] pb-0.5 font-bold text-[#255c99]">샘플 기록 실행</button>
                 ) : (
-                  <button
-                    onClick={reset}
-                    className="text-slate-400 underline decoration-dotted underline-offset-2 hover:text-slate-600"
-                  >
-                    초기화
-                  </button>
+                  <button onClick={reset} className="border-b border-[#d85b35] pb-0.5 font-bold text-[#9f4025]">초기화</button>
                 )}
-              </span>
+                <span className="font-mono-term text-[#aaa59b]">PASTE TO RUN</span>
+              </div>
             </div>
             <textarea
               value={pasted}
               onPaste={handlePaste}
-              onChange={(e) => setPasted(e.target.value)}
+              onChange={(event) => setPasted(event.target.value)}
               readOnly={phase !== 'idle'}
-              placeholder="여기에 ChatGPT / Claude 대화를 통째로 붙여넣으세요  (⌘V)"
-              className={`light-scroll h-[104px] w-full resize-none rounded-lg border px-3 py-2.5 text-[12.5px] leading-relaxed outline-none transition ${
-                phase === 'idle'
-                  ? 'border-slate-200 bg-slate-50 text-slate-700 placeholder:text-slate-400 focus:border-slate-400 focus:bg-white'
-                  : 'border-slate-200 bg-slate-50/60 text-slate-400'
-              }`}
+              placeholder="여기에 ChatGPT 또는 Claude 학습 대화를 붙여넣으세요…"
+              className="light-scroll h-[92px] w-full resize-none border border-[#bdb8ad] bg-[#f8f6f0] px-3 py-2.5 text-[12px] leading-relaxed text-[#3c3a36] outline-none placeholder:text-[#aaa59b] focus:border-[#262624] disabled:opacity-60"
             />
-          </div>
-        </div>
+          </section>
+        </main>
 
-        {/* 같은 자리를 나눠 쓴다: 평소엔 "다음에 공부할 것", 노드를 고르면 노트 패널 */}
-        {selectedNode ? (
-          <NodeDetail
-            node={selectedNode}
-            nodes={nodes}
-            edges={edges}
-            onSelect={setSelectedId}
-            onClose={() => setSelectedId(null)}
-          />
-        ) : (
-          <SideRail nodes={nodes} edges={edges} onSelect={setSelectedId} />
-        )}
-
-        {/* 우측: 에이전트 실행 스트림 */}
-        <div className="w-[404px] shrink-0">
+        <aside className={`shrink-0 overflow-hidden border-l border-[#262624] transition-all duration-500 ${noteMode ? 'w-0 border-transparent opacity-0' : 'w-[420px] opacity-100'}`}>
           <StreamPanel lines={lines} activeStep={activeStep} phase={phase} />
-        </div>
+        </aside>
       </div>
     </div>
   );
