@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { RuntimeEdge, RuntimeNode } from '../mock';
+import type { RuntimeEdge, RuntimeNode } from '../view';
 
 interface Props {
   nodes: RuntimeNode[];
@@ -7,118 +7,61 @@ interface Props {
   onSelect: (id: string) => void;
 }
 
-const stateWeight = (node: RuntimeNode) => {
-  if (node.status === 'learned') return 22;
-  if (node.status === 'introduced') return 12;
-  if (node.status === 'weak') return 7;
-  return 0;
-};
-
 export default function SideRail({ nodes, edges, onSelect }: Props) {
-  const frontier = useMemo(() => {
-    const active = new Set(nodes.filter((n) => n.status !== 'unlearned').map((n) => n.id));
-
+  /**
+   * "다음에 공부할 것"은 따로 만드는 로드맵이 아니라 그래프에서 저절로 파생된다.
+   * = 이미 학습한(또는 약점으로 표시된) 노드에 인접한 미학습 노드.
+   */
+  const nextUp = useMemo(() => {
+    const studied = new Set(nodes.filter((n) => n.status !== 'unlearned').map((n) => n.id));
     return nodes
       .filter((n) => n.status === 'unlearned')
-      .map((node) => {
+      .map((n) => {
         const via = Array.from(
           new Set(
             edges
-              .filter((edge) => edge.source === node.id || edge.target === node.id)
-              .map((edge) => (edge.source === node.id ? edge.target : edge.source))
-              .filter((id) => active.has(id)),
+              .filter((e) => e.from_id === n.id || e.to_id === n.id)
+              .map((e) => (e.from_id === n.id ? e.to_id : e.from_id))
+              .filter((id) => studied.has(id)),
           ),
-        )
-          .map((id) => nodes.find((candidate) => candidate.id === id))
-          .filter((candidate): candidate is RuntimeNode => Boolean(candidate));
-
-        const readiness = Math.min(
-          96,
-          48 + via.reduce((score, prerequisite) => score + stateWeight(prerequisite), 0),
         );
-        return { node, via, readiness };
+        return { node: n, via };
       })
-      .filter((item) => item.via.length > 0)
-      .sort((a, b) => b.readiness - a.readiness || b.via.length - a.via.length);
+      .filter((i) => i.via.length > 0)
+      .sort((a, b) => b.via.length - a.via.length);
   }, [nodes, edges]);
 
+  const labelOf = (id: string) => nodes.find((n) => n.id === id)?.name ?? id;
+
   return (
-    <aside className="light-scroll flex w-[260px] shrink-0 flex-col overflow-y-auto border-l border-slate-200 bg-[#f8fafc] px-4 py-4">
+    <aside className="light-scroll flex w-[212px] shrink-0 flex-col gap-5 overflow-y-auto border-l border-slate-200 bg-slate-50/70 px-4 py-4">
+      {/* 다음에 공부할 것 */}
       <section>
-        <div className="mb-1 flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full bg-sky-500 shadow-[0_0_0_4px_rgba(14,165,233,0.12)]" />
-          <h3 className="text-[10.5px] font-extrabold tracking-[0.12em] text-slate-500">
-            KNOWLEDGE FRONTIER
-          </h3>
-        </div>
-        <h2 className="mt-2 text-[17px] font-bold tracking-tight text-slate-900">지금 배울 수 있는 경계</h2>
-        <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
-          이미 이해한 개념을 발판으로, 가장 적은 노력으로 열 수 있는 다음 지점입니다.
+        <h3 className="text-[10.5px] font-bold tracking-wider text-slate-400">다음에 공부할 것</h3>
+        <p className="mt-1 mb-2 text-[10.5px] leading-snug text-slate-400">
+          학습 완료 노드에 붙어 있는 미학습 노드. 그래프에서 저절로 나온다.
         </p>
-
-        <div className="mt-4 flex flex-col gap-2.5">
-          {frontier.slice(0, 5).map(({ node, via, readiness }, index) => (
-            <button
-              key={node.id}
-              onClick={() => onSelect(node.id)}
-              className={`group w-full rounded-xl border p-3 text-left transition hover:-translate-y-0.5 hover:shadow-md ${
-                index === 0
-                  ? 'border-sky-200 bg-gradient-to-br from-sky-50 to-white shadow-sm'
-                  : 'border-slate-200 bg-white'
-              }`}
-            >
-              <div className="flex items-start gap-2">
-                <span
-                  className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full text-[9px] font-black ${
-                    index === 0 ? 'bg-sky-500 text-white' : 'bg-slate-100 text-slate-500'
-                  }`}
-                >
-                  {index + 1}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="text-[12.5px] leading-tight font-bold text-slate-800 group-hover:text-sky-700">
-                    {node.label}
-                  </div>
-                  <div className="mt-1 text-[10.5px] leading-snug text-slate-400">
-                    {via.map((item) => item.label).join(' · ')}에서 연결
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-3">
-                <div className="mb-1 flex items-center justify-between text-[9.5px] font-semibold">
-                  <span className="text-slate-400">학습 준비도</span>
-                  <span className={index === 0 ? 'text-sky-600' : 'text-slate-500'}>
-                    {readiness}%
+        <ul className="flex flex-col gap-1.5">
+          {nextUp.map(({ node, via }) => (
+            <li key={node.id}>
+              <button
+                onClick={() => onSelect(node.id)}
+                className="w-full rounded-md border border-slate-200 bg-white/60 px-2.5 py-2 text-left transition hover:border-slate-300 hover:bg-white"
+              >
+                <div className="flex items-center gap-1.5">
+                  <span className="h-2 w-2 shrink-0 rounded-full border border-dashed border-slate-400 bg-white" />
+                  <span className="text-[12px] leading-tight font-semibold text-slate-700">
+                    {node.name}
                   </span>
                 </div>
-                <div className="h-1 overflow-hidden rounded-full bg-slate-100">
-                  <div
-                    className={index === 0 ? 'h-full rounded-full bg-sky-500' : 'h-full rounded-full bg-slate-300'}
-                    style={{ width: `${readiness}%` }}
-                  />
+                <div className="mt-1 pl-3.5 text-[10.5px] leading-snug text-slate-400">
+                  {via.map(labelOf).join(' · ')} 다음
                 </div>
-              </div>
-
-              {index === 0 && (
-                <div className="mt-2.5 flex items-center justify-between text-[10px]">
-                  <span className="font-semibold text-slate-500">약 12분</span>
-                  <span className="font-bold text-sky-600">가장 큰 확장 효과 →</span>
-                </div>
-              )}
-            </button>
+              </button>
+            </li>
           ))}
-        </div>
+        </ul>
       </section>
-
-      <div className="mt-auto pt-5">
-        <div className="rounded-xl border border-slate-200 bg-white px-3 py-3">
-          <div className="text-[10px] font-bold tracking-wider text-slate-400">학습 원칙</div>
-          <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
-            대화에 등장한 것과 이해한 것은 다릅니다. 직접 설명하거나 문제를 풀어야 초록색이 됩니다.
-          </p>
-        </div>
-      </div>
     </aside>
   );
 }

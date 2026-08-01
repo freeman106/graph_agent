@@ -1,0 +1,16 @@
+# 편집기 기본값 통일. 린터가 아니라 인코딩/줄바꿈 사고 예방용이다.
+root = true
+
+[*]
+charset = utf-8          # BOM 없는 UTF-8. 한국어 Windows 기본(cp949)으로 저장되는 것을 막는다
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+[*.py]
+indent_size = 4
+
+[*.md]
+trim_trailing_whitespace = false

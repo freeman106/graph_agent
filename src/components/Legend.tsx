@@ -1,10 +1,10 @@
-import { STATUS_STYLE } from '../mock';
+import { NEW_STYLE, STATUS_STYLE } from '../view';
 
 const ITEMS = [
   { ...STATUS_STYLE.learned },
-  { ...STATUS_STYLE.introduced },
   { ...STATUS_STYLE.unlearned },
   { ...STATUS_STYLE.weak },
+  { label: NEW_STYLE.label, fill: NEW_STYLE.fill, stroke: NEW_STYLE.stroke, dashed: false },
 ];
 
 /** 그래프 위에 항상 떠 있는 범례. 노드 패널이 열려도 사라지지 않는다. */
@@ -30,10 +30,6 @@ export default function Legend() {
             !
           </span>
           <span className="text-[11px] leading-tight text-slate-600">약점 배지</span>
-        </li>
-        <li className="flex items-center gap-2">
-          <span className="h-3 w-3 shrink-0 rounded-full border border-dashed border-sky-500 bg-sky-50" />
-          <span className="text-[11px] leading-tight text-slate-600">지금 배울 수 있음</span>
         </li>
       </ul>
     </div>
