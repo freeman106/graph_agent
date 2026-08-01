@@ -224,12 +224,26 @@ docker run -p 8080:8080 -e OPENAI_API_KEY=sk-... -v kg-state:/app/agent/state kn
 
 ### Railway에 올리기
 
-컨테이너를 받아주는 곳이면 어디든 같은 Dockerfile로 올라간다. 마찰이 제일 적은 순서:
+컨테이너를 받아주는 곳이면 어디든 같은 Dockerfile로 올라간다. 실제로 확인한 순서다:
 
-1. GitHub 저장소를 Railway 프로젝트에 연결한다 → Dockerfile을 자동으로 찾는다
-2. Variables에 `OPENAI_API_KEY`를 넣는다 (`PORT`는 Railway가 알아서 준다)
-3. Volume을 만들어 **`/app/agent/state`** 에 마운트한다
-4. Settings에서 인스턴스 수를 **1로 고정한다** (아래 "알려진 한계" 참고)
+```
+npm i -g @railway/cli
+railway login
+railway init --name knowledge-graph
+railway up --ci -y --service knowledge-graph
+railway variables set OPENAI_API_KEY --stdin --skip-deploys   (값은 stdin 으로)
+railway domain
+```
+
+`railway up`은 **이미지가 아니라 소스를 올린다.** Railway 쪽에서 이 Dockerfile로
+직접 빌드하므로, 로컬에만 있고 커밋되지 않은 파일이 있으면 거기서 깨진다.
+
+남은 두 가지는 웹 대시보드에서 한다:
+
+- **Volume을 `/app/agent/state`에 마운트한다.** CLI의 `railway volume add`는
+  5.30.3 에서 패닉한다(`Option::unwrap()` on a `None`). 대시보드에서는 정상이다.
+  안 붙이면 재배포·재시작 때 그래프가 사라진다. 시연만 할 거면 없어도 된다.
+- **인스턴스 수를 1로 고정한다.** 아래 "알려진 한계" 참고.
 
 Fly.io(`fly launch` → `fly volumes create`)나 자체 VM도 절차만 다르고 내용은 같다.
 
