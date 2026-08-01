@@ -20,6 +20,8 @@ import json
 
 from agents import function_tool
 
+from contract.schema import NodeStatus, Relation, Weakpoint
+
 from agent.store import GraphStore
 
 # 모든 툴이 공유하는 단일 저장소. 프로세스 하나에 그래프 하나.
@@ -71,14 +73,97 @@ def create_node(name: str, summary: str, aliases: list[str]) -> str:
     return _json({"node_id": node_id})
 
 
-# ────────────────────────────────────────────────────────────────
-#  B 가 추가할 툴 — store.py 의 대응 메서드를 채운 뒤 여기에 래퍼를 쓴다
-#
-#  @function_tool
-#  def get_neighbors(node_id: str, depth: int = 1) -> str: ...
-#  def lookup_reference(term: str) -> str: ...
-#  def quote_conversation(keyword: str, window: int = 2) -> str: ...
-#  def link_nodes(from_id, to_id, relation, rationale) -> str: ...
-#  def merge_nodes(keep_id, merge_id, reason) -> str: ...
-#  def mark_progress(node_id, status, weakpoint) -> str: ...
-# ────────────────────────────────────────────────────────────────
+@function_tool
+def get_neighbors(node_id: str, depth: int = 1) -> str:
+    """노드와 연결된 간선을 depth 단계까지 조회한다.
+
+    간선은 양방향으로 인접성을 계산하지만, 반환된 from_id / to_id / relation의
+    방향은 그래프에 저장된 원본을 유지한다.
+
+    Args:
+        node_id: 기준 노드 ID.
+        depth: 인접 노드를 확장할 단계 수. 기본값은 1.
+    """
+    edges = STORE.get_neighbors(node_id, depth)
+    return _json([edge.model_dump() for edge in edges])
+
+
+@function_tool
+def link_nodes(from_id: str, to_id: str, relation: Relation, rationale: str) -> str:
+    """두 기존 노드 사이에 방향 있는 관계를 추가하고 edge_id를 반환한다.
+
+    from_id 노드는 to_id 노드의 relation이어야 한다. 예를 들어
+    Softmax --component--> Attention은 "Softmax는 Attention의 구성 요소"를 뜻한다.
+    같은 방향과 관계의 간선이 이미 있으면 기존 edge_id를 반환한다.
+
+    Args:
+        from_id: relation의 주어가 되는 기존 노드 ID.
+        to_id: relation의 대상이 되는 기존 노드 ID.
+        relation: prerequisite, component, variant, contrast, application 중 하나.
+        rationale: 이 간선을 추가하는 대화 근거.
+    """
+    edge_id = STORE.link_nodes(from_id, to_id, relation, rationale)
+    return _json({"edge_id": edge_id})
+
+
+@function_tool
+def merge_nodes(keep_id: str, merge_id: str, reason: str) -> str:
+    """중복이라고 판단한 두 노드를 병합하고 남겨 둔 node_id를 반환한다.
+
+    판단은 모델이 한다. 이 도구는 merge_id의 별칭과 약점을 keep_id로 옮기고,
+    merge_id를 가리키던 간선을 keep_id로 다시 연결한다.
+
+    Args:
+        keep_id: 남길 기존 노드 ID.
+        merge_id: 제거하여 keep_id에 합칠 기존 노드 ID.
+        reason: 두 노드가 같은 개념이라고 판단한 근거.
+    """
+    node_id = STORE.merge_nodes(keep_id, merge_id, reason)
+    return _json({"node_id": node_id})
+
+
+@function_tool
+def mark_progress(
+    node_id: str, status: NodeStatus, weakpoint: Weakpoint | None = None
+) -> str:
+    """노드의 학습 상태를 기록하고, 있으면 대화 근거가 있는 약점을 추가한다.
+
+    weakpoint는 description, misconception, correction, evidence,
+    source_conversation_id 구조를 그대로 전달한다. 약점 판단은 모델이 수행하고,
+    이 도구는 판단 결과만 그래프에 저장한다.
+
+    Args:
+        node_id: 상태를 바꿀 기존 노드 ID.
+        status: unlearned, learned, weak 중 하나.
+        weakpoint: 약점 정보. 없으면 null.
+    """
+    ok = STORE.mark_progress(node_id, status, weakpoint)
+    return _json({"ok": ok})
+
+
+@function_tool
+def lookup_reference(term: str) -> str:
+    """로컬 용어 사전에서 개념의 기준 설명을 조회한다.
+
+    이 도구는 LLM이나 외부 검색을 쓰지 않는다. found가 false면 사전에 없는
+    용어이므로, 대화 근거와 네 판단을 바탕으로 그래프를 다뤄야 한다.
+
+    Args:
+        term: 조회할 용어. 띄어쓰기·대소문자 변형은 정규화한다.
+    """
+    return _json(STORE.lookup_reference(term).model_dump())
+
+
+@function_tool
+def quote_conversation(keyword: str, window: int = 2) -> str:
+    """대화에서 키워드가 나온 턴과 지정한 범위의 앞뒤 문맥을 찾는다.
+
+    반환된 text는 판단 근거를 확인할 때만 쓰고, 키워드가 있다는 사실만으로
+    약점이나 관계를 자동으로 결정하지 마라.
+
+    Args:
+        keyword: 찾을 단어 또는 구절. 띄어쓰기·대소문자 변형은 정규화한다.
+        window: 일치한 턴마다 포함할 앞뒤 문맥 턴 수. 기본값은 2.
+    """
+    quotes = STORE.quote_conversation(keyword, window)
+    return _json([quote.model_dump() for quote in quotes])

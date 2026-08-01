@@ -17,17 +17,20 @@ from pathlib import Path
 
 from contract.schema import (
     Conversation,
+    ConversationQuote,
     Edge,
     Graph,
     Node,
     NodeStatus,
+    Relation,
     ReferenceBook,
+    ReferenceEntry,
     SearchHit,
     Weakpoint,
 )
 
 from agent import READ_ENCODING, WRITE_ENCODING
-from agent.config import GRAPH_PATH, REFERENCE_BOOK, SEED_GRAPH
+from agent.config import DEFAULT_CONVERSATION, GRAPH_PATH, REFERENCE_BOOK, SEED_GRAPH
 
 # ────────────────────────────────────────────────────────────────
 #  정규화 — search_nodes 가 임베딩 대신 쓰는 것
@@ -164,20 +167,184 @@ class GraphStore:
     # ────────────────────────────────────────────────────────
 
     def get_neighbors(self, node_id: str, depth: int = 1) -> list[Edge]:
-        raise NotImplementedError("B: 그래프 엔진에서 구현")
+        if depth <= 0 or self.node(node_id) is None:
+            return []
+
+        visited_nodes = {node_id}
+        frontier = {node_id}
+        seen_edges: set[str] = set()
+        neighbors: list[Edge] = []
+
+        for _ in range(depth):
+            next_frontier: set[str] = set()
+            for edge in self.graph.edges:
+                if edge.from_id not in frontier and edge.to_id not in frontier:
+                    continue
+
+                if edge.id not in seen_edges:
+                    seen_edges.add(edge.id)
+                    neighbors.append(edge)
+
+                if edge.from_id in frontier and edge.to_id not in visited_nodes:
+                    next_frontier.add(edge.to_id)
+                if edge.to_id in frontier and edge.from_id not in visited_nodes:
+                    next_frontier.add(edge.from_id)
+
+            visited_nodes.update(next_frontier)
+            frontier = next_frontier
+            if not frontier:
+                break
+
+        return neighbors
 
     def link_nodes(
-        self, from_id: str, to_id: str, relation: str, rationale: str
+        self, from_id: str, to_id: str, relation: Relation, rationale: str
     ) -> str:
-        raise NotImplementedError("B: 그래프 엔진에서 구현")
+        if from_id == to_id:
+            raise ValueError("간선의 양 끝 노드는 달라야 합니다")
+        if self.node(from_id) is None:
+            raise ValueError(f"존재하지 않는 from_id: {from_id}")
+        if self.node(to_id) is None:
+            raise ValueError(f"존재하지 않는 to_id: {to_id}")
+
+        existing = next(
+            (
+                edge
+                for edge in self.graph.edges
+                if edge.from_id == from_id
+                and edge.to_id == to_id
+                and edge.relation == relation
+            ),
+            None,
+        )
+        if existing is not None:
+            return existing.id
+
+        edge_id = f"{from_id}-{to_id}-{relation}"
+        if any(edge.id == edge_id for edge in self.graph.edges):
+            suffix = 2
+            while any(edge.id == f"{edge_id}-{suffix}" for edge in self.graph.edges):
+                suffix += 1
+            edge_id = f"{edge_id}-{suffix}"
+
+        self.graph.edges.append(
+            Edge(
+                id=edge_id,
+                from_id=from_id,
+                to_id=to_id,
+                relation=relation,
+                rationale=rationale,
+            )
+        )
+        self.save()
+        return edge_id
 
     def merge_nodes(self, keep_id: str, merge_id: str, reason: str) -> str:
-        raise NotImplementedError("B: 그래프 엔진에서 구현")
+        if keep_id == merge_id:
+            raise ValueError("병합할 두 노드는 달라야 합니다")
+
+        keep = self.node(keep_id)
+        merge = self.node(merge_id)
+        if keep is None:
+            raise ValueError(f"존재하지 않는 keep_id: {keep_id}")
+        if merge is None:
+            raise ValueError(f"존재하지 않는 merge_id: {merge_id}")
+
+        for alias in [merge.name, *merge.aliases]:
+            if alias != keep.name and alias not in keep.aliases:
+                keep.aliases.append(alias)
+        for weakpoint in merge.weakpoints:
+            if weakpoint not in keep.weakpoints:
+                keep.weakpoints.append(weakpoint)
+
+        rewritten: list[Edge] = []
+        seen_relations: set[tuple[str, str, str]] = set()
+        for edge in self.graph.edges:
+            from_id = keep_id if edge.from_id == merge_id else edge.from_id
+            to_id = keep_id if edge.to_id == merge_id else edge.to_id
+            if from_id == to_id:
+                continue
+
+            relation_key = (from_id, to_id, edge.relation)
+            if relation_key in seen_relations:
+                continue
+            seen_relations.add(relation_key)
+            rewritten.append(
+                Edge(
+                    id=edge.id,
+                    from_id=from_id,
+                    to_id=to_id,
+                    relation=edge.relation,
+                    rationale=edge.rationale,
+                )
+            )
+
+        self.graph.edges = rewritten
+        self.graph.nodes = [node for node in self.graph.nodes if node.id != merge_id]
+        self.save()
+        return keep_id
 
     def mark_progress(
         self, node_id: str, status: NodeStatus, weakpoint: Weakpoint | None = None
     ) -> bool:
-        raise NotImplementedError("B: 그래프 엔진에서 구현")
+        node = self.node(node_id)
+        if node is None:
+            raise ValueError(f"존재하지 않는 node_id: {node_id}")
+
+        updated = node.model_dump()
+        updated["status"] = status
+        if weakpoint is not None:
+            updated["weakpoints"] = [*node.weakpoints, weakpoint]
+        validated = Node.model_validate(updated)
+        self.graph.nodes = [
+            validated if current.id == node_id else current
+            for current in self.graph.nodes
+        ]
+        self.save()
+        return True
+
+    def lookup_reference(self, term: str) -> ReferenceEntry:
+        """로컬 용어 사전을 정규화한 정확한 키로 조회한다."""
+        normalized_term = normalize(term)
+        if not normalized_term:
+            return ReferenceEntry(found=False)
+
+        reference_book = load_reference_book()
+        entry = reference_book.entries.get(normalized_term)
+        if entry is not None:
+            return entry
+
+        # 사전 파일을 사람이 편집했을 때도 동일한 정규화 규칙으로 조회한다.
+        for key, candidate in reference_book.entries.items():
+            if normalize(key) == normalized_term:
+                return candidate
+        return ReferenceEntry(found=False)
+
+    def quote_conversation(
+        self, keyword: str, window: int = 2
+    ) -> list[ConversationQuote]:
+        """기본 대화에서 키워드 일치 턴과 앞뒤 문맥을 중복 없이 돌려준다."""
+        normalized_keyword = normalize(keyword)
+        if not normalized_keyword or window < 0:
+            return []
+
+        conversation = load_conversation(DEFAULT_CONVERSATION)
+        included_indexes: set[int] = set()
+        for position, turn in enumerate(conversation.turns):
+            if normalized_keyword not in normalize(turn.text):
+                continue
+
+            start = max(0, position - window)
+            end = min(len(conversation.turns), position + window + 1)
+            included_indexes.update(
+                candidate.index for candidate in conversation.turns[start:end]
+            )
+
+        return [
+            ConversationQuote(index=turn.index, text=turn.text)
+            for turn in conversation.turns
+            if turn.index in included_indexes
+        ]
 
 
 # ────────────────────────────────────────────────────────────────
