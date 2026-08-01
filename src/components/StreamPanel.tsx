@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { STEP_NAMES, type StreamLine, type StreamLineKind } from '../mock';
+import { STEP_NAMES } from '../mock';
+import type { StreamLine, StreamLineKind } from '../view';
 
 interface Props {
   lines: StreamLine[];

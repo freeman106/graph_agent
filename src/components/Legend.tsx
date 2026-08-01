@@ -1,4 +1,4 @@
-import { NEW_STYLE, STATUS_STYLE } from '../mock';
+import { NEW_STYLE, STATUS_STYLE } from '../view';
 
 const ITEMS = [
   { ...STATUS_STYLE.learned },

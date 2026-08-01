@@ -1,42 +1,49 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
+import { RELATION_LABEL, type Node } from '../contract/schema';
 import Graph from './components/Graph';
 import Legend from './components/Legend';
 import NodeDetail from './components/NodeDetail';
 import SideRail from './components/SideRail';
 import StreamPanel from './components/StreamPanel';
+import { NODE_LAYOUT, placeNewNode, type Point } from './layout';
 import {
   CONVERSATION_META,
+  DETECTED_WEAKPOINT,
   INITIAL_EDGES,
   INITIAL_NODES,
-  LECTURE_NOTES,
+  NOTE_UPDATES,
   PLACEMENTS,
   REVIEW_FINDINGS,
   SAMPLE_CONVERSATION,
   TOOL_STEPS,
   WEAKPOINT_NODE_ID,
-  type LectureNote,
-  type RuntimeEdge,
-  type RuntimeNode,
-  type StreamLine,
-  type StreamLineKind,
 } from './mock';
+import type { RuntimeEdge, RuntimeNode, StreamLine, StreamLineKind } from './view';
 
 type Phase = 'idle' | 'running' | 'done';
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** 계약 Node 에 프론트 좌표를 붙여 렌더링용 노드로 만든다. */
+function withLayout(nodes: Node[]): RuntimeNode[] {
+  return nodes.map((n) => ({ ...n, ...(NODE_LAYOUT[n.id] ?? { x: 0, y: 0 }) }));
+}
+
+function pointsOf(nodes: RuntimeNode[]): Record<string, Point> {
+  return Object.fromEntries(nodes.map((n) => [n.id, { x: n.x, y: n.y }]));
+}
+
 /** 스트림 줄에 개념 이름을 찍기 위한 정적 라벨 맵 */
-const LABELS = new Map<string, string>([
-  ...INITIAL_NODES.map((n) => [n.id, n.label] as const),
-  ...PLACEMENTS.map((p) => [p.node.id, p.node.label] as const),
+const NAMES = new Map<string, string>([
+  ...INITIAL_NODES.map((n) => [n.id, n.name] as const),
+  ...PLACEMENTS.map((p) => [p.node.id, p.node.name] as const),
 ]);
-const labelOf = (id: string) => LABELS.get(id) ?? id;
+const nameOf = (id: string) => NAMES.get(id) ?? id;
 
 export default function App() {
-  const [nodes, setNodes] = useState<RuntimeNode[]>(() => INITIAL_NODES.map((n) => ({ ...n })));
+  const [nodes, setNodes] = useState<RuntimeNode[]>(() => withLayout(INITIAL_NODES));
   const [edges, setEdges] = useState<RuntimeEdge[]>(() => INITIAL_EDGES.map((e) => ({ ...e })));
   const [lines, setLines] = useState<StreamLine[]>([]);
-  const [notes, setNotes] = useState<Record<string, LectureNote>>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>('idle');
   const [activeStep, setActiveStep] = useState(-1);
@@ -49,15 +56,17 @@ export default function App() {
     setLines((prev) => [...prev, { id: ++lineId.current, kind, text }]);
   }, []);
 
-  const noteIds = useMemo(() => new Set(Object.keys(notes)), [notes]);
+  const noteIds = useMemo(
+    () => new Set(nodes.filter((n) => n.weakpoints.length > 0).map((n) => n.id)),
+    [nodes],
+  );
   const selectedNode = selectedId ? (nodes.find((n) => n.id === selectedId) ?? null) : null;
 
   const reset = () => {
     runToken.current++;
-    setNodes(INITIAL_NODES.map((n) => ({ ...n })));
+    setNodes(withLayout(INITIAL_NODES));
     setEdges(INITIAL_EDGES.map((e) => ({ ...e })));
     setLines([]);
-    setNotes({});
     setSelectedId(null);
     setPhase('idle');
     setActiveStep(-1);
@@ -74,11 +83,8 @@ export default function App() {
     setPhase('running');
     setSelectedId(null);
 
-    push(
-      'system',
-      `대화 입력 감지 — ${text.length.toLocaleString()}자 / ${CONVERSATION_META.turns}턴`,
-    );
-    push('system', '단계별 승인 없이 6단계를 끝까지 실행합니다.');
+    push('system', `대화 입력 감지 — ${text.length.toLocaleString()}자 / ${CONVERSATION_META.turns}턴`);
+    push('system', '단계별 승인 없이 끝까지 실행합니다.');
     await wait(650);
     if (!alive()) return;
 
@@ -122,14 +128,20 @@ export default function App() {
     if (!alive()) return;
 
     for (const p of PLACEMENTS) {
-      setNodes((prev) => [...prev, { ...p.node, isNew: true, justAdded: true }]);
-      push('place', `${p.node.label} — 그래프에 배치`);
+      setNodes((prev) => {
+        const point = placeNewNode(p.node.id, p.anchors, pointsOf(prev));
+        return [...prev, { ...p.node, ...point, isNew: true, justAdded: true }];
+      });
+      push('place', `${p.node.name} — 그래프에 배치`);
       await wait(520);
       if (!alive()) return;
 
       for (const e of p.edges) {
         setEdges((prev) => [...prev, { ...e, isNew: true, justAdded: true }]);
-        push('edge', `  └─[${e.relation}]→  ${labelOf(e.source)} → ${labelOf(e.target)}`);
+        push(
+          'edge',
+          `  └─[${RELATION_LABEL[e.relation]}]→  ${nameOf(e.from_id)} → ${nameOf(e.to_id)}`,
+        );
         await wait(420);
         if (!alive()) return;
       }
@@ -154,31 +166,36 @@ export default function App() {
     if (!alive()) return;
     push('result', `[결과] ${s4.result}`);
     push('reason', s4.reason);
-    setNodes((prev) =>
-      prev.map((n) => (n.id === WEAKPOINT_NODE_ID ? { ...n, status: 'weak', flash: true } : n)),
-    );
-    push('detail', '  정정 전 → 학습이 더 오래 걸리니 학습에도 KV Cache를 적용하면 이득이다');
-    push('detail', '  정정 후 → 학습은 전 위치를 한 번의 forward로 계산. 재사용할 이전 스텝이 없음');
-    await wait(1000);
-    if (!alive()) return;
-    setNodes((prev) => prev.map((n) => (n.flash ? { ...n, flash: false } : n)));
-    await wait(600);
+    for (const ev of DETECTED_WEAKPOINT.evidence.slice(0, 2)) {
+      push('detail', `  #${ev.index} ${ev.speaker === 'user' ? '나' : 'ChatGPT'}: ${ev.text.slice(0, 70)}…`);
+    }
+    await wait(1300);
     if (!alive()) return;
 
-    /* ── 5. write_lecture_note ── */
+    /* ── 5. mark_progress — 약점과 노트를 그래프에 쓴다 ── */
     setActiveStep(4);
     const s5 = TOOL_STEPS.write_lecture_note;
     push('call', `[호출 중] ${s5.tool}(${s5.args})`);
     await wait(900);
     if (!alive()) return;
-    for (const note of LECTURE_NOTES) {
-      setNotes((prev) => ({ ...prev, [note.nodeId]: note }));
-      push(
-        'detail',
-        `  ✎ ${labelOf(note.nodeId)} — 요약 / ${
-          note.correction ? '정정 전·후 / ' : ''
-        }인용 ${note.evidence.length}건`,
+
+    setNodes((prev) =>
+      prev.map((n) =>
+        n.id === WEAKPOINT_NODE_ID
+          ? { ...n, status: 'weak', weakpoints: [DETECTED_WEAKPOINT], flash: true }
+          : n,
+      ),
+    );
+    push('detail', `  ✎ ${nameOf(WEAKPOINT_NODE_ID)} — 약점 1건 · 정정 전·후 · 인용 ${DETECTED_WEAKPOINT.evidence.length}건`);
+    await wait(700);
+    if (!alive()) return;
+    setNodes((prev) => prev.map((n) => (n.flash ? { ...n, flash: false } : n)));
+
+    for (const u of NOTE_UPDATES) {
+      setNodes((prev) =>
+        prev.map((n) => (n.id === u.node_id ? { ...n, summary: u.summary } : n)),
       );
+      push('detail', `  ✎ ${nameOf(u.node_id)} — 요약 갱신`);
       await wait(340);
       if (!alive()) return;
     }
@@ -208,17 +225,12 @@ export default function App() {
           ),
         );
         setEdges((prev) =>
-          prev.map((e) => (e.source === from || e.target === from ? { ...e, removing: true } : e)),
+          prev.map((e) => (e.from_id === from || e.to_id === from ? { ...e, removing: true } : e)),
         );
         await wait(460);
         if (!alive()) return;
         setNodes((prev) => prev.filter((n) => n.id !== from));
-        setEdges((prev) => prev.filter((e) => e.source !== from && e.target !== from));
-        setNotes((prev) => {
-          const next = { ...prev };
-          delete next[from];
-          return next;
-        });
+        setEdges((prev) => prev.filter((e) => e.from_id !== from && e.to_id !== from));
         await wait(900);
         if (!alive()) return;
         setNodes((prev) => prev.map((n) => (n.flash ? { ...n, flash: false } : n)));
@@ -241,9 +253,7 @@ export default function App() {
     if (!alive()) return;
     push(
       'done',
-      `실행 완료 — 노드 ${INITIAL_NODES.length + 3}개 / 간선 ${
-        INITIAL_EDGES.length + 8
-      }개. 노드를 클릭하면 강의노트가 열립니다.`,
+      `실행 완료 — 노드 ${INITIAL_NODES.length + 3}개 / 간선 ${INITIAL_EDGES.length + 8}개. 노드를 클릭하면 노트가 열립니다.`,
     );
     setActiveStep(6);
     setPhase('done');
@@ -334,11 +344,10 @@ export default function App() {
           </div>
         </div>
 
-        {/* 같은 자리를 나눠 쓴다: 평소엔 "다음에 공부할 것", 노드를 고르면 강의노트 패널 */}
+        {/* 같은 자리를 나눠 쓴다: 평소엔 "다음에 공부할 것", 노드를 고르면 노트 패널 */}
         {selectedNode ? (
           <NodeDetail
             node={selectedNode}
-            note={notes[selectedNode.id]}
             nodes={nodes}
             edges={edges}
             onSelect={setSelectedId}

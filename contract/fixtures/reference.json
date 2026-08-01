@@ -1,0 +1,65 @@
+{
+  "source": "local-reference-v1",
+  "entries": {
+    "kv cache": {
+      "found": true,
+      "canonical_name": "KV Cache",
+      "summary": "자기회귀 생성에서 이전 토큰들의 Key/Value 텐서를 저장해두고 재사용해 매 스텝의 재계산을 없애는 추론 전용 최적화. 시간을 얻고 메모리를 지불한다.",
+      "source": "local-reference-v1"
+    },
+    "flash attention": {
+      "found": true,
+      "canonical_name": "Flash Attention",
+      "summary": "어텐션 행렬을 HBM에 쓰지 않고 타일 단위로 SRAM에서 처리해 메모리 왕복을 줄이는 IO 최적화. 결과값은 기존 어텐션과 정확히 동일하다.",
+      "source": "local-reference-v1"
+    },
+    "autoregressive decoding": {
+      "found": true,
+      "canonical_name": "Autoregressive Decoding",
+      "summary": "이전까지 생성한 토큰을 다시 입력으로 넣어 다음 토큰을 하나씩 뽑는 순차 생성 방식. 스텝이 순차적으로 묶여 있다는 점이 이 방식의 성질을 모두 결정한다.",
+      "source": "local-reference-v1"
+    },
+    "teacher forcing": {
+      "found": true,
+      "canonical_name": "Teacher Forcing",
+      "summary": "학습 시 모델의 예측 대신 정답 토큰을 다음 스텝 입력으로 넣는 방식. 시퀀스 전체를 한 번의 forward로 병렬 계산할 수 있게 만든다.",
+      "source": "local-reference-v1"
+    },
+    "grouped-query attention": {
+      "found": true,
+      "canonical_name": "Grouped-Query Attention",
+      "summary": "여러 Query 헤드가 Key/Value 헤드를 공유해 KV 캐시 메모리를 줄이는 어텐션 변형. MHA와 MQA 사이의 절충.",
+      "source": "local-reference-v1"
+    },
+    "multi-query attention": {
+      "found": true,
+      "canonical_name": "Multi-Query Attention",
+      "summary": "모든 Query 헤드가 단 하나의 Key/Value 헤드를 공유하는 어텐션 변형. KV 캐시가 가장 작지만 품질 손실이 있다.",
+      "source": "local-reference-v1"
+    },
+    "paged attention": {
+      "found": true,
+      "canonical_name": "Paged Attention",
+      "summary": "KV 캐시를 고정 크기 페이지로 쪼개 관리해 단편화를 줄이는 서빙 기법. 운영체제의 가상 메모리 페이징에서 따왔다.",
+      "source": "local-reference-v1"
+    },
+    "masked attention": {
+      "found": true,
+      "canonical_name": "Masked Attention",
+      "summary": "미래 위치의 어텐션 점수를 -inf로 만들어 각 토큰이 자기 앞쪽만 보게 하는 어텐션. 디코더의 인과성을 보장한다.",
+      "source": "local-reference-v1"
+    },
+    "self-attention": {
+      "found": true,
+      "canonical_name": "Self-Attention",
+      "summary": "Query, Key, Value를 모두 같은 시퀀스에서 만드는 어텐션. 시퀀스 내부의 토큰끼리 서로를 참조한다.",
+      "source": "local-reference-v1"
+    },
+    "hbm": {
+      "found": true,
+      "canonical_name": "High Bandwidth Memory",
+      "summary": "GPU에 붙은 대용량 고대역폭 메모리. SRAM보다 크지만 느려서, 여기 왕복을 줄이는 것이 커널 최적화의 핵심이 된다.",
+      "source": "local-reference-v1"
+    }
+  }
+}

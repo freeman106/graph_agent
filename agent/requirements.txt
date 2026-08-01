@@ -1,0 +1,2 @@
+openai-agents>=0.19,<1.0
+pydantic>=2.9,<3.0

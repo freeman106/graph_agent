@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { RuntimeEdge, RuntimeNode } from '../mock';
+import type { RuntimeEdge, RuntimeNode } from '../view';
 
 interface Props {
   nodes: RuntimeNode[];
@@ -20,8 +20,8 @@ export default function SideRail({ nodes, edges, onSelect }: Props) {
         const via = Array.from(
           new Set(
             edges
-              .filter((e) => e.source === n.id || e.target === n.id)
-              .map((e) => (e.source === n.id ? e.target : e.source))
+              .filter((e) => e.from_id === n.id || e.to_id === n.id)
+              .map((e) => (e.from_id === n.id ? e.to_id : e.from_id))
               .filter((id) => studied.has(id)),
           ),
         );
@@ -31,7 +31,7 @@ export default function SideRail({ nodes, edges, onSelect }: Props) {
       .sort((a, b) => b.via.length - a.via.length);
   }, [nodes, edges]);
 
-  const labelOf = (id: string) => nodes.find((n) => n.id === id)?.label ?? id;
+  const labelOf = (id: string) => nodes.find((n) => n.id === id)?.name ?? id;
 
   return (
     <aside className="light-scroll flex w-[212px] shrink-0 flex-col gap-5 overflow-y-auto border-l border-slate-200 bg-slate-50/70 px-4 py-4">
@@ -51,7 +51,7 @@ export default function SideRail({ nodes, edges, onSelect }: Props) {
                 <div className="flex items-center gap-1.5">
                   <span className="h-2 w-2 shrink-0 rounded-full border border-dashed border-slate-400 bg-white" />
                   <span className="text-[12px] leading-tight font-semibold text-slate-700">
-                    {node.label}
+                    {node.name}
                   </span>
                 </div>
                 <div className="mt-1 pl-3.5 text-[10.5px] leading-snug text-slate-400">

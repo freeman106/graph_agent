@@ -22,3 +22,11 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# 에이전트 로컬 상태 (그래프 스냅샷 · 실행 기록)
+agent/state/

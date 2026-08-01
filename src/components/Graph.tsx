@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react';
+import { RELATION_LABEL } from '../../contract/schema';
+import { GRAPH_VIEWBOX } from '../layout';
 import {
-  GRAPH_VIEWBOX,
   NEW_STYLE,
   STATUS_STYLE,
   wrapLabel,
   type RuntimeEdge,
   type RuntimeNode,
-} from '../mock';
+} from '../view';
 
 const R = 22;
 
@@ -44,7 +45,7 @@ export default function Graph({ nodes, edges, selectedId, noteIds, onSelect }: P
   const focusedEdges = useMemo(() => {
     if (!focusId) return new Set<string>();
     return new Set(
-      edges.filter((e) => e.source === focusId || e.target === focusId).map((e) => e.id),
+      edges.filter((e) => e.from_id === focusId || e.to_id === focusId).map((e) => e.id),
     );
   }, [edges, focusId]);
 
@@ -52,8 +53,8 @@ export default function Graph({ nodes, edges, selectedId, noteIds, onSelect }: P
     if (!focusId) return new Set<string>();
     const s = new Set<string>();
     for (const e of edges) {
-      if (e.source === focusId) s.add(e.target);
-      if (e.target === focusId) s.add(e.source);
+      if (e.from_id === focusId) s.add(e.to_id);
+      if (e.to_id === focusId) s.add(e.from_id);
     }
     return s;
   }, [edges, focusId]);
@@ -103,8 +104,8 @@ export default function Graph({ nodes, edges, selectedId, noteIds, onSelect }: P
       {/* ── 간선 ───────────────────────────────── */}
       <g>
         {edges.map((e) => {
-          const a = byId.get(e.source);
-          const b = byId.get(e.target);
+          const a = byId.get(e.from_id);
+          const b = byId.get(e.to_id);
           if (!a || !b) return null;
           const g = trim(a.x, a.y, b.x, b.y);
           const focused = focusedEdges.has(e.id);
@@ -136,14 +137,15 @@ export default function Graph({ nodes, edges, selectedId, noteIds, onSelect }: P
       {/* ── 관계 라벨 (신규 간선은 항상, 나머지는 포커스 시) ── */}
       <g>
         {edges.map((e) => {
-          const a = byId.get(e.source);
-          const b = byId.get(e.target);
+          const a = byId.get(e.from_id);
+          const b = byId.get(e.to_id);
           if (!a || !b) return null;
           const show = e.isNew || focusedEdges.has(e.id);
           if (!show || e.removing) return null;
           const mx = (a.x + b.x) / 2;
           const my = (a.y + b.y) / 2;
-          const w = e.relation.replace(/\s/g, '').length * 10.5 + 16;
+          const label = RELATION_LABEL[e.relation];
+          const w = label.replace(/\s/g, '').length * 10.5 + 16;
           return (
             <g
               key={`l-${e.id}`}
@@ -168,7 +170,7 @@ export default function Graph({ nodes, edges, selectedId, noteIds, onSelect }: P
                 fontWeight={600}
                 fill={e.isNew ? '#6d28d9' : '#64748b'}
               >
-                {e.relation}
+                {label}
               </text>
             </g>
           );
@@ -184,7 +186,7 @@ export default function Graph({ nodes, edges, selectedId, noteIds, onSelect }: P
           const dim = !!focusId && !isFocus && !isNeighbor;
           const fill = n.justAdded ? NEW_STYLE.fill : s.fill;
           const stroke = n.justAdded ? NEW_STYLE.stroke : s.stroke;
-          const lines = wrapLabel(n.label);
+          const lines = wrapLabel(n.name);
 
           return (
             <g
