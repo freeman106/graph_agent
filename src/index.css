@@ -220,6 +220,15 @@ button {
   animation: selection-composer-in 240ms cubic-bezier(.22, .8, .25, 1) both;
 }
 
+.study-plan-workspace {
+  animation: study-plan-in 360ms cubic-bezier(.22, .8, .25, 1) both;
+}
+
+@keyframes study-plan-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 @keyframes selection-composer-in {
   from { opacity: 0; transform: translateY(-7px) scale(0.985); }
   to { opacity: 1; transform: translateY(0) scale(1); }
@@ -266,7 +275,8 @@ button {
   .caret,
   .note-workspace,
   .comment-pop,
-  .selection-composer {
+  .selection-composer,
+  .study-plan-workspace {
     animation: none !important;
   }
 

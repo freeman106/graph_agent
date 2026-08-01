@@ -4,6 +4,7 @@ import Graph from './components/Graph';
 import Legend from './components/Legend';
 import NodeDetail from './components/NodeDetail';
 import NoteWorkspace from './components/NoteWorkspace';
+import StudyPlanWorkspace from './components/StudyPlanWorkspace';
 import StreamPanel from './components/StreamPanel';
 import { anchorForNode, LECTURE_NOTE_SECTIONS, NOTE_COMMENTS, NOTE_INSERTIONS } from './lectureNote';
 import { NODE_LAYOUT, placeNewNode, type Point } from './layout';
@@ -62,6 +63,7 @@ export default function App() {
   const [mapFilter, setMapFilter] = useState('all');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [noteMode, setNoteMode] = useState(false);
+  const [studyMode, setStudyMode] = useState(false);
   const [activeNoteAnchor, setActiveNoteAnchor] = useState('p-summary-1');
   const [noteNavigationVersion, setNoteNavigationVersion] = useState(0);
   const [noteComments, setNoteComments] = useState<RuntimeNoteComment[]>(() => NOTE_COMMENTS.map((comment) => ({ ...comment, kind: 'agent' as const, highlighted: true, archived: false })));
@@ -125,6 +127,7 @@ export default function App() {
     setPasted('');
     setMapFilter('all');
     setNoteMode(false);
+    setStudyMode(false);
     setActiveNoteAnchor('p-summary-1');
     setNoteNavigationVersion(0);
     setNoteComments(NOTE_COMMENTS.map((comment) => ({ ...comment, kind: 'agent' as const, highlighted: true, archived: false })));
@@ -134,6 +137,7 @@ export default function App() {
   };
 
   const openNote = (nodeId: string) => {
+    setStudyMode(false);
     setSelectedId(nodeId);
     setActiveNoteAnchor(anchorForNode(nodeId));
     setNoteNavigationVersion((value) => value + 1);
@@ -490,6 +494,11 @@ export default function App() {
           </select>
           <button type="button" className="h-full border-l border-[#d2cec4] px-3 text-[9px] font-black text-[#77736a] hover:bg-[#eee9df]">＋ 과목 추가</button>
         </div>
+        <button
+          type="button"
+          onClick={() => { setNoteMode(false); setStudyMode(true); }}
+          className={`ml-3 h-9 border px-3 text-[9px] font-black transition ${studyMode ? 'border-[#75492e] bg-[#75492e] text-white' : 'border-[#b99b72] bg-[#fffaf0] text-[#75492e] hover:border-[#75492e]'}`}
+        >◎ 최소 학습 문서</button>
         <div className="ml-auto flex h-full items-center border-x border-[#d2cec4]">
           {[
             ['학습', learnedCount],
@@ -531,8 +540,10 @@ export default function App() {
             />
           )}
 
+          {studyMode && <StudyPlanWorkspace edges={edges} nodes={nodes} noteContent={noteContent} onClose={() => setStudyMode(false)} />}
+
           <section
-            className={`graph-surface graph-stage z-40 overflow-hidden bg-[#f7f5ef] ${noteMode ? 'graph-stage-note border border-[#262624] shadow-[8px_8px_0_rgba(38,38,36,0.15)]' : ''} ${isMinimapDragging ? 'graph-stage-dragging' : ''}`}
+            className={`graph-surface graph-stage z-40 overflow-hidden bg-[#f7f5ef] ${noteMode ? 'graph-stage-note border border-[#262624] shadow-[8px_8px_0_rgba(38,38,36,0.15)]' : ''} ${studyMode ? 'pointer-events-none opacity-0' : ''} ${isMinimapDragging ? 'graph-stage-dragging' : ''}`}
             style={noteMode ? { left: minimapPosition.x, top: minimapPosition.y } : undefined}
           >
             <div
@@ -605,7 +616,7 @@ export default function App() {
             </div>
           </section>
 
-          <section className={`absolute right-0 bottom-0 left-0 shrink-0 overflow-hidden border-t border-[#262624] bg-[#efebe2] px-5 transition-all duration-500 ${noteMode ? 'pointer-events-none h-0 border-transparent py-0 opacity-0' : 'h-[154px] py-4 opacity-100'}`}>
+          <section className={`absolute right-0 bottom-0 left-0 shrink-0 overflow-hidden border-t border-[#262624] bg-[#efebe2] px-5 transition-all duration-500 ${noteMode || studyMode ? 'pointer-events-none h-0 border-transparent py-0 opacity-0' : 'h-[154px] py-4 opacity-100'}`}>
             <div className="mb-2 flex items-center">
               <div>
                 <span className="text-[10px] font-black tracking-[0.14em]">새 학습 기록</span>
@@ -630,7 +641,7 @@ export default function App() {
           </section>
         </main>
 
-        <aside className={`shrink-0 overflow-hidden border-l border-[#262624] transition-all duration-500 ${noteMode ? 'w-0 border-transparent opacity-0' : 'w-[420px] opacity-100'}`}>
+        <aside className={`shrink-0 overflow-hidden border-l border-[#262624] transition-all duration-500 ${noteMode || studyMode ? 'w-0 border-transparent opacity-0' : 'w-[420px] opacity-100'}`}>
           <StreamPanel lines={lines} activeStep={activeStep} phase={phase} />
         </aside>
       </div>
