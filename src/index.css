@@ -36,6 +36,12 @@ button {
   background: #f7f5ef;
 }
 
+.workspace-surface:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  background: #f7f5ef;
+}
+
 .graph-stage {
   position: absolute;
   top: 0;
@@ -55,6 +61,10 @@ button {
   left: 12px;
   width: 350px;
   height: 240px;
+}
+
+.graph-stage-dragging {
+  transition: none;
 }
 
 .font-mono-term {
@@ -193,6 +203,28 @@ button {
   box-shadow: 0 0 0 3px rgba(37, 92, 153, 0.13);
 }
 
+.note-selection-pending {
+  margin: 0 -2px;
+  padding: 2px;
+  color: inherit;
+  background: linear-gradient(180deg, transparent 12%, rgba(245, 202, 120, 0.64) 12%, rgba(245, 202, 120, 0.64) 90%, transparent 90%);
+  box-shadow: inset 0 -2px 0 rgba(166, 92, 41, 0.55);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.selection-composer {
+  background:
+    radial-gradient(circle at 100% 0%, rgba(238, 196, 126, 0.24), transparent 42%),
+    #fffaf2;
+  animation: selection-composer-in 240ms cubic-bezier(.22, .8, .25, 1) both;
+}
+
+@keyframes selection-composer-in {
+  from { opacity: 0; transform: translateY(-7px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 .comment-card::before {
   position: absolute;
   top: 21px;
@@ -200,6 +232,18 @@ button {
   width: 28px;
   border-top: 1px solid #bdb8ad;
   content: '';
+}
+
+.comment-card-active {
+  transform: scale(1.012);
+  box-shadow:
+    0 12px 30px rgba(113, 70, 35, 0.2),
+    inset 5px 0 0 #d97732;
+}
+
+.comment-card-active::before {
+  border-top-color: #d97732;
+  border-top-width: 2px;
 }
 
 @keyframes comment-pop {
@@ -221,7 +265,8 @@ button {
   .line-in,
   .caret,
   .note-workspace,
-  .comment-pop {
+  .comment-pop,
+  .selection-composer {
     animation: none !important;
   }
 

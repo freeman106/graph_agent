@@ -34,8 +34,7 @@ export default function StreamPanel({ lines, activeStep, phase }: Props) {
     <div className="flex h-full flex-col bg-[#171a1b] text-[#d4d0c7]">
       <header className="flex h-14 shrink-0 items-center border-b border-[#3b3f40] px-4">
         <div>
-          <div className="text-[10px] font-black tracking-[0.16em] text-[#d4d0c7]">AGENT EXECUTION LOG</div>
-          <div className="mt-1 font-mono-term text-[9px] text-[#686f72]">RAW TRACE / AUTO APPROVE</div>
+          <div className="text-[10px] font-black tracking-[0.16em] text-[#d4d0c7]">처리 기록</div>
         </div>
         <div className="ml-auto flex items-center gap-2 font-mono-term text-[9.5px] text-[#899094]">
           <span className={`h-2 w-2 ${phase === 'running' ? 'animate-pulse bg-[#e47c57]' : phase === 'done' ? 'bg-[#6fa27c]' : 'bg-[#565c5f]'}`} />
@@ -73,13 +72,7 @@ export default function StreamPanel({ lines, activeStep, phase }: Props) {
 
       <div ref={logRef} className="stream-scroll min-h-0 flex-1 overflow-y-auto px-4 py-3">
         {lines.length === 0 && (
-          <div className="mt-2 border-l border-[#3b3f40] pl-4 font-mono-term text-[10.5px] leading-[1.9] text-[#565c5f]">
-            <div>$ agent.run --conversation stdin</div>
-            <div>대화를 붙여넣으면 이곳에</div>
-            <div>툴 호출, 판단 근거, 결과가</div>
-            <div>생략 없이 순서대로 표시됩니다.</div>
-            <div className="mt-3 text-[#454a4c]">status: waiting_for_input</div>
-          </div>
+          <div className="mt-2 border-l border-[#3b3f40] pl-4 font-mono-term text-[10.5px] text-[#565c5f]">대화 입력 대기</div>
         )}
         <div className="flex flex-col gap-[4px]">
           {lines.map((line) => {
@@ -101,7 +94,7 @@ export default function StreamPanel({ lines, activeStep, phase }: Props) {
       </div>
 
       <footer className="flex h-9 shrink-0 items-center border-t border-[#3b3f40] px-4 font-mono-term text-[8.5px] text-[#565c5f]">
-        <span>schema.v1</span><span className="mx-2">/</span><span>stream intact</span><span className="ml-auto">auto_approve=true</span>
+        <span>기록 {lines.length.toString().padStart(3, '0')}개</span><span className="ml-auto">schema.v1</span>
       </footer>
     </div>
   );

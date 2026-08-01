@@ -16,6 +16,13 @@ export const LECTURE_NOTE_META = {
   initialConcepts: 22,
 };
 
+export const LECTURE_NOTE_MAJOR_SECTIONS = [
+  { id: 'major-input', number: '01', title: 'INPUT', sectionIds: ['chapter-input', 'chapter-position'] },
+  { id: 'major-attention', number: '02', title: 'ATTENTION', sectionIds: ['chapter-attention', 'chapter-self-attention', 'chapter-causality'] },
+  { id: 'major-architecture', number: '03', title: 'ARCHITECTURE', sectionIds: ['chapter-block', 'chapter-architectures', 'chapter-training'] },
+  { id: 'major-decoding', number: '04', title: 'DECODING', sectionIds: ['chapter-decoding', 'chapter-systems'] },
+] as const;
+
 export const LECTURE_NOTE_SECTIONS = [
   {
     id: 'chapter-input',
@@ -244,14 +251,26 @@ export const NOTE_COMMENTS = [
   },
   {
     id: 'comment-cache',
-    anchorId: 'p-mask-2',
-    quote: '새 토큰이 한 개 추가되어도 이미 계산된 앞쪽 토큰들은 새 토큰을 볼 수 없으므로 그 위치들의 표현은 바뀌지 않는다',
+    anchorId: 'insert-kv-cache',
+    quote: '자기회귀 추론의 매 스텝에서 과거 토큰의 Key와 Value는 이미 계산되어 있고 Causal Mask 때문에 새 토큰의 영향을 받지 않는다',
     nodeId: 'kv-cache',
     title: 'KV Cache가 성립하는 이유',
     body: '대화에서 새로 만든 KV Cache 노드는 바로 이 불변성을 재사용합니다. 앞 토큰의 K/V는 다시 계산하지 않고 저장해 두며, 새 토큰의 K/V만 뒤에 추가합니다.',
     source: '대화 #4–#5 · 신규 노드',
     relatedNodeId: 'masked-attention',
     relatedAnchorId: 'p-mask-1',
+    revealOnRun: true,
+  },
+  {
+    id: 'comment-autoregressive',
+    anchorId: 'insert-autoregressive-decoding',
+    quote: '강의노트는 자기회귀 생성을 토큰 선택 규칙의 배경으로만 짧게 언급했다',
+    nodeId: 'autoregressive-decoding',
+    title: '별도 실행 개념으로 확장',
+    body: '원래 노트에는 한 문장으로만 있던 자기회귀 생성을 대화에서 실행 상태와 서버 처리량 관점의 별도 개념으로 확장했습니다.',
+    source: '대화 #0–#3 · 신규 노드',
+    relatedNodeId: 'greedy-decoding',
+    relatedAnchorId: 'p-greedy-1',
     revealOnRun: true,
   },
   {
@@ -268,17 +287,60 @@ export const NOTE_COMMENTS = [
   },
   {
     id: 'comment-flash',
-    anchorId: null,
-    quote: null,
+    anchorId: 'insert-flash-attention',
+    quote: 'Flash Attention은 근사 어텐션이 아니다',
     nodeId: 'flash-attention',
-    title: '노트 밖에서 나온 개념',
-    body: 'Flash Attention은 이번 대화에서 새로 다뤘지만 강의노트에는 직접 대응하는 설명이 없습니다. 억지로 문장을 하이라이트하지 않고 코멘트만 보존했습니다. 그래프에서는 Attention의 구현 변형으로 연결됩니다.',
-    source: '대화 #10–#11 · 노트 일치 없음',
+    title: '노트 밖 보충 개념',
+    body: 'Flash Attention은 원래 시험범위 노트에 없어서 별도의 접힌 보충자료로 삽입했습니다. 그래프에서는 Attention의 구현 변형으로 연결됩니다.',
+    source: '대화 #10–#11 · 신규 노드',
     relatedNodeId: 'attention',
     relatedAnchorId: 'p-systems-2',
     revealOnRun: true,
   },
 ] as const satisfies readonly RuntimeNoteComment[];
+
+/** 대화에서 새로 생긴 개념은 원래 시험범위와 섞지 않고 접힌 보충자료로 삽입한다. */
+export const NOTE_INSERTIONS = [
+  {
+    id: 'insert-kv-cache',
+    afterSectionId: 'chapter-causality',
+    nodeId: 'kv-cache',
+    eyebrow: '대화에서 추가 · 추론 최적화',
+    title: 'KV Cache: 바뀌지 않는 Key와 Value 재사용하기',
+    preview: '이전 토큰의 K/V를 저장해 자기회귀 생성의 중복 계산을 줄이는 방법',
+    tags: ['시험범위 밖', 'KV 메모리', '추론 전용'],
+    paragraphs: [
+      '자기회귀 추론의 매 스텝에서 과거 토큰의 Key와 Value는 이미 계산되어 있고 Causal Mask 때문에 새 토큰의 영향을 받지 않는다. KV Cache는 이 텐서들을 레이어별로 저장한 뒤 다음 스텝에서 다시 사용하고, 새 토큰 한 개의 K/V만 뒤에 추가한다.',
+      '연산량은 크게 줄지만 캐시 크기는 배치, 레이어 수, KV 헤드 수, 문맥 길이와 head dimension에 비례해 증가한다. 긴 문맥 서비스에서는 모델 가중치보다 캐시 메모리가 더 큰 병목이 될 수 있으므로 GQA나 페이지 단위 메모리 관리와 함께 고려한다.',
+    ],
+  },
+  {
+    id: 'insert-autoregressive-decoding',
+    afterSectionId: 'chapter-causality',
+    nodeId: 'autoregressive-decoding',
+    eyebrow: '대화에서 추가 · 생성 루프',
+    title: 'Autoregressive Decoding: 한 토큰씩 이어지는 실행 상태',
+    preview: '다음 토큰을 선택하고 다시 입력에 붙이는 순차 생성 루프의 시스템 관점',
+    tags: ['시험범위 밖', '생성 상태', '순차 처리'],
+    paragraphs: [
+      '강의노트는 자기회귀 생성을 토큰 선택 규칙의 배경으로만 짧게 언급했다. 대화에서는 이를 별도 실행 상태로 분리했다. 현재까지의 토큰, 종료 조건, 샘플링 설정과 캐시 위치가 한 스텝에서 다음 스텝으로 함께 전달된다.',
+      '토큰 방향 의존성 때문에 한 요청 안의 생성 스텝은 순차적이지만, 서버는 서로 다른 요청을 배치로 묶어 가속기를 채울 수 있다. 따라서 모델 알고리즘의 순차성과 서비스 전체 처리량은 구분해 이해해야 한다.',
+    ],
+  },
+  {
+    id: 'insert-flash-attention',
+    afterSectionId: 'chapter-systems',
+    nodeId: 'flash-attention',
+    eyebrow: '대화에서 추가 · IO 최적화',
+    title: 'Flash Attention: 중간 행렬을 쓰지 않는 정확한 어텐션',
+    preview: '어텐션 결과는 유지하면서 HBM 왕복을 줄이는 타일 기반 구현',
+    tags: ['시험범위 밖', 'HBM / SRAM', '정확한 결과'],
+    paragraphs: [
+      'Flash Attention은 근사 어텐션이 아니다. Query, Key, Value를 작은 타일로 나누고 온라인 Softmax를 사용해 전체 점수 행렬을 HBM에 기록하지 않으면서도 일반 어텐션과 같은 결과를 계산한다.',
+      'KV Cache가 생성 스텝 사이의 상태를 보존하는 최적화라면 Flash Attention은 한 번의 어텐션 연산 안에서 메모리 이동을 줄이는 최적화다. 둘은 함께 사용할 수 있지만 해결하는 병목의 축이 다르다.',
+    ],
+  },
+] as const;
 
 export const NOTE_NODE_ANCHORS: Record<string, string> = {
   tokenization: 'p-tokenization-1',
@@ -303,10 +365,10 @@ export const NOTE_NODE_ANCHORS: Record<string, string> = {
   'greedy-decoding': 'p-greedy-1',
   'beam-search': 'p-beam-1',
   'temperature-sampling': 'p-temperature-1',
-  'autoregressive-decoding': 'p-autoregressive-1',
+  'autoregressive-decoding': 'insert-autoregressive-decoding',
   'incremental-decoding': 'p-autoregressive-1',
-  'kv-cache': 'p-mask-2',
-  'flash-attention': 'p-systems-2',
+  'kv-cache': 'insert-kv-cache',
+  'flash-attention': 'insert-flash-attention',
 };
 
 export function anchorForNode(nodeId: string) {

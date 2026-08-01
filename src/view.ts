@@ -39,6 +39,11 @@ export interface RuntimeNoteComment {
   relatedNodeId: string | null;
   relatedAnchorId: string | null;
   revealOnRun: boolean;
+  kind?: 'agent' | 'question' | 'conversation' | 'highlight';
+  highlighted?: boolean;
+  archived?: boolean;
+  start?: number;
+  end?: number;
   createdNow?: boolean;
 }
 
