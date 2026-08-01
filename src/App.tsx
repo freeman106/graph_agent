@@ -3,11 +3,12 @@ import { RELATION_LABEL, type Node } from '../contract/schema';
 import Graph from './components/Graph';
 import Legend from './components/Legend';
 import NodeDetail from './components/NodeDetail';
-import NoteWorkspace from './components/NoteWorkspace';
+import PdfNoteWorkspace from './components/PdfNoteWorkspace';
 import StudyPlanWorkspace from './components/StudyPlanWorkspace';
 import StreamPanel from './components/StreamPanel';
-import { anchorForNode, LECTURE_NOTE_SECTIONS, NOTE_COMMENTS, NOTE_INSERTIONS } from './lectureNote';
+import { LECTURE_NOTE_SECTIONS, NOTE_COMMENTS, NOTE_INSERTIONS } from './lectureNote';
 import { NODE_LAYOUT, placeNewNode, type Point } from './layout';
+import { extractPdfNote, loadDefaultPdfNote, type PdfNoteDocument } from './pdfNote';
 import {
   CONVERSATION_META,
   DETECTED_COMMENT,
@@ -20,8 +21,8 @@ import {
   TOOL_STEPS,
   WEAKPOINT_NODE_ID,
 } from './mock';
-import type { RuntimeEdge, RuntimeNode, RuntimeNoteComment, StreamLine, StreamLineKind } from './view';
 import { fetchGraph, probeAgent, runAgent, toStreamLine, type AgentStatus } from './agentApi';
+import type { RuntimeEdge, RuntimeNode, StreamLine, StreamLineKind } from './view';
 
 type Phase = 'idle' | 'running' | 'done';
 
@@ -65,10 +66,11 @@ export default function App() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [noteMode, setNoteMode] = useState(false);
   const [studyMode, setStudyMode] = useState(false);
-  const [activeNoteAnchor, setActiveNoteAnchor] = useState('p-summary-1');
-  const [noteNavigationVersion, setNoteNavigationVersion] = useState(0);
-  const [noteComments, setNoteComments] = useState<RuntimeNoteComment[]>(() => NOTE_COMMENTS.map((comment) => ({ ...comment, kind: 'agent' as const, highlighted: true, archived: false })));
+  const [noteComments, setNoteComments] = useState(() => NOTE_COMMENTS.map((comment) => ({ ...comment, kind: 'agent' as const, highlighted: true, archived: false })));
   const [noteContent, setNoteContent] = useState<Record<string, string>>(() => initialNoteContent());
+  const [pdfNote, setPdfNote] = useState<PdfNoteDocument | null>(null);
+  const [pdfLoading, setPdfLoading] = useState(true);
+  const [pdfError, setPdfError] = useState<string | null>(null);
   const [resolvedWeakpoints, setResolvedWeakpoints] = useState<Set<string>>(() => new Set());
   const [minimapPosition, setMinimapPosition] = useState({ x: 12, y: 12 });
   const [isMinimapDragging, setIsMinimapDragging] = useState(false);
@@ -77,11 +79,29 @@ export default function App() {
 
   const lineId = useRef(0);
   const runToken = useRef(0);
+  const pdfLoadToken = useRef(0);
   const workspaceRef = useRef<HTMLElement | null>(null);
   const minimapDragRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null);
 
   useEffect(() => {
     void probeAgent().then(setAgent);
+  }, []);
+
+  useEffect(() => {
+    const token = ++pdfLoadToken.current;
+    void loadDefaultPdfNote()
+      .then((note) => {
+        if (pdfLoadToken.current !== token) return;
+        setPdfNote(note);
+        setPdfError(null);
+      })
+      .catch((error: unknown) => {
+        if (pdfLoadToken.current !== token) return;
+        setPdfError(error instanceof Error ? error.message : '기본 PDF를 불러오지 못했습니다.');
+      })
+      .finally(() => {
+        if (pdfLoadToken.current === token) setPdfLoading(false);
+      });
   }, []);
 
   useEffect(() => {
@@ -135,8 +155,6 @@ export default function App() {
     setMapFilter('all');
     setNoteMode(false);
     setStudyMode(false);
-    setActiveNoteAnchor('p-summary-1');
-    setNoteNavigationVersion(0);
     setNoteComments(NOTE_COMMENTS.map((comment) => ({ ...comment, kind: 'agent' as const, highlighted: true, archived: false })));
     setNoteContent(initialNoteContent());
     setResolvedWeakpoints(new Set());
@@ -146,102 +164,7 @@ export default function App() {
   const openNote = (nodeId: string) => {
     setStudyMode(false);
     setSelectedId(nodeId);
-    setActiveNoteAnchor(anchorForNode(nodeId));
-    setNoteNavigationVersion((value) => value + 1);
     setNoteMode(true);
-  };
-
-  const navigateInNote = (nodeId: string, anchorId: string) => {
-    setSelectedId(nodeId);
-    setActiveNoteAnchor(anchorId);
-    setNoteNavigationVersion((value) => value + 1);
-  };
-
-  const addNoteComment = (comment: RuntimeNoteComment, sourceText: string) => {
-    setNoteComments((previous) => [...previous, comment]);
-    setSelectedId(comment.nodeId);
-    if (comment.anchorId) setActiveNoteAnchor(comment.anchorId);
-    setNodes((previous) => previous.map((node) => {
-      if (node.id !== comment.nodeId) return node;
-      const updated = { ...node, flash: true };
-      // 하이라이트 전용 코멘트는 약점이 아니다 — 계약 Comment.weakpoint 가 null 이 된다.
-      if (comment.kind === 'highlight') {
-        return {
-          ...updated,
-          comments: [
-            ...node.comments,
-            {
-              body: `${comment.title}: ${comment.body}`,
-              quote: comment.quote,
-              weakpoint: null,
-              source_conversation_id: `note-selection-${comment.id}`,
-            },
-          ],
-        };
-      }
-      return {
-        ...updated,
-        status: 'weak' as const,
-        comments: [
-          ...node.comments,
-          {
-            body: `${comment.title}: ${comment.body}`,
-            quote: comment.quote,
-            weakpoint: {
-              description: `${comment.title}: ${comment.body}`,
-              misconception: null,
-              correction: null,
-              evidence: [{ index: 0, speaker: 'user', text: sourceText }],
-              source_conversation_id: `note-selection-${comment.id}`,
-            },
-            source_conversation_id: `note-selection-${comment.id}`,
-          },
-        ],
-      };
-    }));
-    window.setTimeout(() => {
-      setNodes((previous) => previous.map((node) => node.flash ? { ...node, flash: false } : node));
-    }, 760);
-    push('detail', comment.kind === 'highlight'
-      ? `  ✎ ${nameOf(comment.nodeId)} — 개인 하이라이트 추가`
-      : `  ✎ ${nameOf(comment.nodeId)} — 노트 선택 영역에서 새 코멘트와 막힌 지점 추가`);
-  };
-
-  const toggleCommentHighlight = (commentId: string, highlighted: boolean) => {
-    setNoteComments((previous) => previous.map((comment) => comment.id === commentId ? { ...comment, highlighted } : comment));
-  };
-
-  const updateNoteComment = (commentId: string, title: string, body: string) => {
-    setNoteComments((previous) => previous.map((comment) => comment.id === commentId ? { ...comment, title, body } : comment));
-  };
-
-  const archiveNoteComment = (commentId: string, archived: boolean) => {
-    setNoteComments((previous) => previous.map((comment) => comment.id === commentId ? { ...comment, archived } : comment));
-  };
-
-  const deleteNoteComment = (commentId: string) => {
-    const target = noteComments.find((comment) => comment.id === commentId);
-    setNoteComments((previous) => previous.filter((comment) => comment.id !== commentId));
-    if (!target || (target.kind !== 'question' && target.kind !== 'conversation')) return;
-    const sourceId = `note-selection-${commentId}`;
-    setNodes((previous) => previous.map((node) => {
-      if (node.id !== target.nodeId) return node;
-      const comments = node.comments.filter((comment) => comment.source_conversation_id !== sourceId);
-      const openWeakpoints = comments.filter((comment) => comment.weakpoint).length;
-      return { ...node, comments, status: node.status === 'weak' && openWeakpoints === 0 ? 'learned' : node.status };
-    }));
-    setResolvedWeakpoints((previous) => new Set(Array.from(previous).filter((key) => !key.startsWith(`${target.nodeId}::`))));
-  };
-
-  const updateNoteContent = (paragraphId: string, body: string) => {
-    setNoteContent((previous) => ({ ...previous, [paragraphId]: body }));
-    setNoteComments((previous) => previous.map((comment) => {
-      if (comment.anchorId !== paragraphId || !comment.quote) return comment;
-      const start = body.indexOf(comment.quote);
-      return start >= 0
-        ? { ...comment, start, end: start + comment.quote.length }
-        : { ...comment, highlighted: false, start: undefined, end: undefined };
-    }));
   };
 
   const toggleWeakpoint = (nodeId: string, index: number, checked: boolean) => {
@@ -279,12 +202,40 @@ export default function App() {
     }
   };
 
+  const importPdf = async (file: File) => {
+    const token = ++pdfLoadToken.current;
+    setPdfLoading(true);
+    setPdfError(null);
+    try {
+      const note = await extractPdfNote(file, file.name);
+      if (pdfLoadToken.current !== token) return;
+      setPdfNote(note);
+    } catch (error) {
+      if (pdfLoadToken.current !== token) return;
+      setPdfError(error instanceof Error ? error.message : 'PDF를 읽지 못했습니다.');
+    } finally {
+      if (pdfLoadToken.current === token) setPdfLoading(false);
+    }
+  };
+
+  const restoreDefaultPdf = async () => {
+    const token = ++pdfLoadToken.current;
+    setPdfLoading(true);
+    setPdfError(null);
+    try {
+      const note = await loadDefaultPdfNote();
+      if (pdfLoadToken.current !== token) return;
+      setPdfNote(note);
+    } catch (error) {
+      if (pdfLoadToken.current !== token) return;
+      setPdfError(error instanceof Error ? error.message : '기본 PDF를 불러오지 못했습니다.');
+    } finally {
+      if (pdfLoadToken.current === token) setPdfLoading(false);
+    }
+  };
+
   const selectFromGraph = (nodeId: string | null) => {
     setSelectedId(nodeId);
-    if (noteMode && nodeId) {
-      setActiveNoteAnchor(anchorForNode(nodeId));
-      setNoteNavigationVersion((value) => value + 1);
-    }
   };
 
   /**
@@ -563,6 +514,11 @@ export default function App() {
           onClick={() => { setNoteMode(false); setStudyMode(true); }}
           className={`ml-3 h-9 border px-3 text-[9px] font-black transition ${studyMode ? 'border-[#75492e] bg-[#75492e] text-white' : 'border-[#b99b72] bg-[#fffaf0] text-[#75492e] hover:border-[#75492e]'}`}
         >◎ 최소 학습 문서</button>
+        <button
+          type="button"
+          onClick={() => { setStudyMode(false); setNoteMode(true); }}
+          className={`ml-2 h-9 border px-3 text-[9px] font-black transition ${noteMode ? 'border-[#255c99] bg-[#255c99] text-white' : 'border-[#8aa7bf] bg-[#edf3f8] text-[#255c99] hover:border-[#255c99]'}`}
+        >▤ PDF 노트</button>
         <div className="ml-auto flex h-full items-center border-x border-[#d2cec4]">
           {[
             ['학습', learnedCount],
@@ -585,22 +541,13 @@ export default function App() {
       <div className="flex min-h-0 flex-1">
         <main ref={workspaceRef} className="workspace-surface relative flex min-w-0 flex-1 flex-col overflow-hidden bg-[#f7f5ef]">
           {noteMode && (
-            <NoteWorkspace
-              activeAnchorId={activeNoteAnchor}
-              annotationsVisible={annotationsVisible}
-              comments={noteComments}
-              edges={edges}
-              navigationVersion={noteNavigationVersion}
-              noteContent={noteContent}
-              nodes={nodes}
-              onCreateComment={addNoteComment}
-              onArchiveComment={archiveNoteComment}
-              onDeleteComment={deleteNoteComment}
-              onToggleCommentHighlight={toggleCommentHighlight}
-              onUpdateComment={updateNoteComment}
-              onUpdateNoteContent={updateNoteContent}
+            <PdfNoteWorkspace
+              error={pdfError}
+              isLoading={pdfLoading}
+              note={pdfNote}
               onClose={() => setNoteMode(false)}
-              onNavigate={navigateInNote}
+              onImportPdf={(file) => void importPdf(file)}
+              onRestoreDefault={() => void restoreDefaultPdf()}
             />
           )}
 
