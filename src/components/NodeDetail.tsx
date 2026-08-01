@@ -75,7 +75,10 @@ export default function NodeDetail({
           {node.aliases.length > 0 && <p className="mt-3 font-mono-term text-[9.5px] leading-relaxed text-[#8c877d]">ALSO: {node.aliases.join(' / ')}</p>}
         </section>
 
-        {node.weakpoints.map((weakpoint, index) => (
+        {node.comments
+          .map((comment) => comment.weakpoint)
+          .filter((weakpoint): weakpoint is NonNullable<typeof weakpoint> => weakpoint !== null)
+          .map((weakpoint, index) => (
           <section key={index} className="py-5">
             {(() => {
               const resolved = resolvedWeakpoints.has(`${node.id}::${index}`);

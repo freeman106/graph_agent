@@ -72,7 +72,7 @@ export default function App() {
 
   const annotationsVisible = activeStep >= 3 || phase === 'done';
   const noteIds = useMemo(() => {
-    const ids = new Set(nodes.filter((node) => node.weakpoints.length > 0).map((node) => node.id));
+    const ids = new Set(nodes.filter((node) => node.comments.some((c) => c.weakpoint)).map((node) => node.id));
     noteComments
       .filter((comment) => annotationsVisible || !comment.revealOnRun)
       .forEach((comment) => ids.add(comment.nodeId));
@@ -121,13 +121,18 @@ export default function App() {
         ...node,
         status: 'weak',
         flash: true,
-        weakpoints: [
-          ...node.weakpoints,
+        comments: [
+          ...node.comments,
           {
-            description: `${comment.title}: ${comment.body}`,
-            misconception: null,
-            correction: null,
-            evidence: [{ index: 0, speaker: 'user', text: sourceText }],
+            body: `${comment.title}: ${comment.body}`,
+            quote: comment.quote,
+            weakpoint: {
+              description: `${comment.title}: ${comment.body}`,
+              misconception: null,
+              correction: null,
+              evidence: [{ index: 0, speaker: 'user', text: sourceText }],
+              source_conversation_id: `note-selection-${comment.id}`,
+            },
             source_conversation_id: `note-selection-${comment.id}`,
           },
         ],
@@ -147,8 +152,9 @@ export default function App() {
     setResolvedWeakpoints(next);
     setNodes((previous) => previous.map((node) => {
       if (node.id !== nodeId) return node;
-      const allResolved = node.weakpoints.length > 0
-        && node.weakpoints.every((_, weakpointIndex) => next.has(weakpointKey(node.id, weakpointIndex)));
+      const nodeWeakpoints = node.comments.filter((comment) => comment.weakpoint);
+      const allResolved = nodeWeakpoints.length > 0
+        && nodeWeakpoints.every((_, weakpointIndex) => next.has(weakpointKey(node.id, weakpointIndex)));
       return { ...node, status: allResolved ? 'learned' : 'weak', flash: allResolved };
     }));
     if (checked) {
@@ -161,7 +167,9 @@ export default function App() {
   const toggleLearned = (nodeId: string, checked: boolean) => {
     setNodes((previous) => previous.map((node) => {
       if (node.id !== nodeId) return node;
-      const hasOpenWeakpoint = node.weakpoints.some((_, index) => !resolvedWeakpoints.has(weakpointKey(node.id, index)));
+      const hasOpenWeakpoint = node.comments
+        .filter((comment) => comment.weakpoint)
+        .some((_, index) => !resolvedWeakpoints.has(weakpointKey(node.id, index)));
       return { ...node, status: checked ? 'learned' : hasOpenWeakpoint ? 'weak' : 'unlearned', flash: checked };
     }));
     if (checked) {

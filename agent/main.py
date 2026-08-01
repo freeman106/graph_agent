@@ -41,7 +41,7 @@ from agent.stream import StreamWriter
 # 단계를 강제하지 않는다. 목표만 주고 어떤 툴을 몇 번 어떤 순서로 부를지는
 # 모델이 정한다. 대신 상태를 바꾸기 전에 판단 근거를 남기게 한다.
 
-INSTRUCTIONS = """\
+CONVERSATION_INSTRUCTIONS = """\
 너는 사용자의 개인 지식그래프를 관리하는 에이전트다.
 
 목표: 주어진 대화를 읽고, 거기서 다뤄진 개념들을 기존 지식그래프에 반영하라.
@@ -64,39 +64,119 @@ INSTRUCTIONS = """\
    이 대화에서 다뤄지지 않았다면 넣지 마라.
 
 5. 사용자가 되물었거나, 잘못 알고 있다가 정정된 지점이 있으면 그 개념을 눈여겨봐라.
-   그게 이 그래프에서 가장 중요한 정보다.
+   그게 이 그래프에서 가장 중요한 정보다. mark_progress 의 comment 로 남긴다.
 
-6. 끝나면 무엇을 어떻게 바꿨는지 짧게 정리하라.
+6. 코멘트의 quote 는 그 노드 document 안에 있는 문장을 그대로 넣어라. 프론트가
+   문서에서 그 문자열을 찾아 하이라이트한다. 고쳐 쓰면 하이라이트가 걸리지 않는다.
+
+7. 약점의 evidence 는 대화 원문 그대로여야 한다. 기억해서 옮겨 적지 말고
+   quote_conversation 으로 가져와서 그 텍스트를 그대로 써라. 요약하거나 줄이면
+   근거가 아니게 된다. 화면에는 이 문장이 "대화에서 실제로 이렇게 말했다" 로 표시된다.
+
+8. 단원과 소주제는 새로 만들지 않는다. 이미 있는 소주제 중에서 고르기만 하라.
+   아래 목록에 맞는 게 없으면 subtopic_id 를 비워 둬라.
+
+9. 끝나면 무엇을 어떻게 바꿨는지 짧게 정리하라.
 """
 
-# 계약 B 의 여덟 개가 전부 물려 있다. 조회 먼저, 상태 변경 나중 순으로 둔다 —
-# 순서를 강제하지는 않지만 모델이 목록을 읽는 순서이기도 하다.
-TOOLS = [
-    # 조회
+LECTURE_INSTRUCTIONS = """\
+너는 사용자의 개인 지식그래프를 만드는 에이전트다.
+
+목표: 주어진 강의안을 읽고, 거기서 다뤄진 개념들로 지식그래프의 첫 모습을 만들어라.
+
+작업 방식은 네가 정한다. 어떤 툴을 몇 번 어떤 순서로 부를지 스스로 결정하고,
+할 일이 끝났다고 판단하면 멈춰라. 정해진 단계는 없다.
+
+지켜야 할 것:
+
+1. 그래프 상태를 바꾸는 툴을 호출하기 전에, 왜 그렇게 판단했는지 한 줄을 먼저 써라.
+
+2. 단원(create_chapter)과 소주제(create_subtopic)는 지금 이 실행에서만 만들 수 있다.
+   나중에 대화로 추가되는 개념들도 전부 여기서 만든 분류 안으로 들어온다.
+   그러니 강의안의 큰 흐름을 담되, 나중 개념도 들어올 자리가 있게 잡아라.
+
+3. 단원은 강의안의 큰 목차 단위다. 개념 하나마다 만들지 않는다.
+   소주제는 그 안에서 문서 몇 개를 묶는 단위이고, blurb 에 한 문장으로 설명을 단다.
+
+4. 노드는 개념 단위로 만든다. document 에는 그 개념을 설명하는 읽을 수 있는 글을 써라.
+   summary 는 그래프에 붙는 한 줄이고, document 는 노트에서 읽는 본문이다. 둘은 다르다.
+
+5. document 는 강의안에 실제로 있는 내용으로 쓴다. 네가 아는 사실이라도 강의안이
+   다루지 않았으면 넣지 마라. 나중에 학생이 무엇을 덜 이해했는지 판정하는 기준선이 된다.
+
+6. 개념 사이 관계가 강의안에 드러나 있으면 link_nodes 로 이어라.
+
+7. 끝나면 무엇을 만들었는지 짧게 정리하라.
+"""
+
+# 실행 종류에 따라 툴 목록이 다르다.
+#
+# 단원과 소주제는 강의안을 넣을 때만 만들어진다. 대화 실행에서는 기존 것으로
+# 분류만 한다. 이걸 프롬프트로 부탁하지 않고 **툴을 안 주는 것으로** 강제한다 —
+# 지시는 언젠가 무시되지만 없는 툴은 부를 수 없다.
+#
+# 순서를 강제하는 게 아니라 할 수 있는 일의 범위를 정하는 것이라
+# "단계를 강제하지 않는다"(AGENTS.md 7절) 와 부딪히지 않는다.
+
+_READ_TOOLS = [
     tool_module.search_nodes,
     tool_module.get_neighbors,
     tool_module.lookup_reference,
-    tool_module.quote_conversation,
-    # 변경
+]
+
+_GRAPH_TOOLS = [
     tool_module.create_node,
     tool_module.link_nodes,
     tool_module.merge_nodes,
     tool_module.mark_progress,
 ]
 
+# 강의안 실행 — 단원/소주제를 만들 수 있다. 대화가 없으므로 quote_conversation 이 없다.
+LECTURE_TOOLS = [
+    *_READ_TOOLS,
+    tool_module.create_chapter,
+    tool_module.create_subtopic,
+    *_GRAPH_TOOLS,
+]
+
+# 대화 실행 — 단원/소주제를 만들 수 없다. 대신 대화를 인용할 수 있다.
+CONVERSATION_TOOLS = [
+    *_READ_TOOLS,
+    tool_module.quote_conversation,
+    *_GRAPH_TOOLS,
+]
+
 
 def build_agent() -> Agent:
     return Agent(
         name="knowledge-graph-agent",
-        instructions=INSTRUCTIONS,
-        tools=TOOLS,
+        instructions=CONVERSATION_INSTRUCTIONS,
+        tools=CONVERSATION_TOOLS,
         model=MODEL,
     )
 
 
+def render_chapters() -> str:
+    """기존 단원/소주제 목록. 모델이 분류하려면 뭐가 있는지 봐야 한다.
+
+    툴로 조회하게 하면 턴을 하나 쓰고 안 부를 수도 있다. 목록이 작으므로
+    입력 앞에 붙인다. 가변부라 프롬프트 캐싱 순서도 깨지 않는다.
+    """
+    chapters = tool_module.STORE.graph.chapters
+    if not chapters:
+        return "분류 가능한 단원: (없음 — subtopic_id 는 비워 둔다)\n"
+    lines = ["분류 가능한 단원과 소주제 (새로 만들 수 없다. 이 중에서만 고른다):"]
+    for chapter in chapters:
+        lines.append(f"  [{chapter.id}] {chapter.title}")
+        for sub in chapter.subtopics:
+            blurb = f" — {sub.blurb}" if sub.blurb else ""
+            lines.append(f"     subtopic_id={sub.id}  {sub.title}{blurb}")
+    return "\n".join(lines) + "\n"
+
+
 def render_conversation(conv: Conversation) -> str:
     """대화를 모델 입력으로 편다. 턴 인덱스를 남겨야 근거 인용이 가능하다."""
-    lines = [f"대화 id: {conv.id}", f"제목: {conv.title}", ""]
+    lines = [render_chapters(), f"대화 id: {conv.id}", f"제목: {conv.title}", ""]
     speaker_ko = {"user": "사용자", "assistant": "어시스턴트"}
     for turn in conv.turns:
         lines.append(f"[{turn.index}] {speaker_ko[turn.speaker]}: {turn.text}")

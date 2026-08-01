@@ -16,17 +16,20 @@ import shutil
 from pathlib import Path
 
 from contract.schema import (
+    Chapter,
+    Comment,
     Conversation,
     ConversationQuote,
     Edge,
     Graph,
     Node,
+    NodeOrigin,
     NodeStatus,
     Relation,
     ReferenceBook,
     ReferenceEntry,
     SearchHit,
-    Weakpoint,
+    Subtopic,
 )
 
 from agent import READ_ENCODING, WRITE_ENCODING
@@ -135,14 +138,36 @@ class GraphStore:
         name: str,
         summary: str,
         aliases: list[str] | None = None,
+        document: str = "",
+        chapter_id: str | None = None,
+        subtopic_id: str | None = None,
+        origin: NodeOrigin = "conversation",
         source_conversation_id: str | None = None,
+        source_lecture_id: str | None = None,
     ) -> str:
         """새 노드를 만들고 id 를 돌려준다.
 
         같은 id 가 이미 있으면 새로 만들지 않고 기존 id 를 그대로 돌려준다.
         (모델이 중복을 만들려 해도 그래프가 깨지지 않게 하는 안전장치일 뿐,
         중복 판정을 대신해주는 게 아니다.)
+
+        chapter_id / subtopic_id 는 **이미 있는 것만** 받는다. 단원과 소주제는
+        강의안 투입 때만 만들어지고, 대화에서는 분류만 하기 때문이다.
         """
+        if chapter_id is not None and self.chapter(chapter_id) is None:
+            raise ValueError(
+                f"존재하지 않는 chapter_id: {chapter_id} — 단원은 강의안 투입 때만 만들어진다"
+            )
+        if subtopic_id is not None:
+            owner = self.chapter_of_subtopic(subtopic_id)
+            if owner is None:
+                raise ValueError(f"존재하지 않는 subtopic_id: {subtopic_id}")
+            if chapter_id is not None and owner.id != chapter_id:
+                raise ValueError(
+                    f"소주제 {subtopic_id} 는 단원 {owner.id} 소속인데 chapter_id 는 {chapter_id}"
+                )
+            chapter_id = owner.id
+
         node_id = slugify(name)
         existing = self.node(node_id)
         if existing is not None:
@@ -154,13 +179,49 @@ class GraphStore:
                 name=name,
                 aliases=aliases or [],
                 summary=summary,
+                document=document,
+                chapter_id=chapter_id,
+                subtopic_id=subtopic_id,
                 status="learned",
-                weakpoints=[],
+                origin=origin,
+                comments=[],
                 source_conversation_id=source_conversation_id,
+                source_lecture_id=source_lecture_id,
             )
         )
         self.save()
         return node_id
+
+    # ── 단원 / 소주제 ───────────────────────────────────────
+    # 강의안 투입 경로에서만 쓰인다. 대화 실행에는 툴이 노출되지 않는다.
+
+    def chapter(self, chapter_id: str) -> Chapter | None:
+        return next((c for c in self.graph.chapters if c.id == chapter_id), None)
+
+    def chapter_of_subtopic(self, subtopic_id: str) -> Chapter | None:
+        for chapter in self.graph.chapters:
+            if any(s.id == subtopic_id for s in chapter.subtopics):
+                return chapter
+        return None
+
+    def create_chapter(self, title: str) -> str:
+        chapter_id = slugify(title)
+        if self.chapter(chapter_id) is None:
+            self.graph.chapters.append(Chapter(id=chapter_id, title=title))
+            self.save()
+        return chapter_id
+
+    def create_subtopic(self, chapter_id: str, title: str, blurb: str = "") -> str:
+        chapter = self.chapter(chapter_id)
+        if chapter is None:
+            raise ValueError(f"존재하지 않는 chapter_id: {chapter_id}")
+        subtopic_id = slugify(f"{chapter_id}-{title}")
+        if not any(s.id == subtopic_id for s in chapter.subtopics):
+            chapter.subtopics.append(
+                Subtopic(id=subtopic_id, title=title, blurb=blurb)
+            )
+            self.save()
+        return subtopic_id
 
     # ────────────────────────────────────────────────────────
     #  B 가 채울 자리 — 시그니처는 contract/README.md 계약 B 와 같다
@@ -253,9 +314,11 @@ class GraphStore:
         for alias in [merge.name, *merge.aliases]:
             if alias != keep.name and alias not in keep.aliases:
                 keep.aliases.append(alias)
-        for weakpoint in merge.weakpoints:
-            if weakpoint not in keep.weakpoints:
-                keep.weakpoints.append(weakpoint)
+        for comment in merge.comments:
+            if comment not in keep.comments:
+                keep.comments.append(comment)
+        if not keep.document and merge.document:
+            keep.document = merge.document
 
         rewritten: list[Edge] = []
         seen_relations: set[tuple[str, str, str]] = set()
@@ -285,7 +348,7 @@ class GraphStore:
         return keep_id
 
     def mark_progress(
-        self, node_id: str, status: NodeStatus, weakpoint: Weakpoint | None = None
+        self, node_id: str, status: NodeStatus, comment: Comment | None = None
     ) -> bool:
         node = self.node(node_id)
         if node is None:
@@ -293,8 +356,8 @@ class GraphStore:
 
         updated = node.model_dump()
         updated["status"] = status
-        if weakpoint is not None:
-            updated["weakpoints"] = [*node.weakpoints, weakpoint]
+        if comment is not None:
+            updated["comments"] = [*node.comments, comment]
         validated = Node.model_validate(updated)
         self.graph.nodes = [
             validated if current.id == node_id else current

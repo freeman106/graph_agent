@@ -49,7 +49,7 @@ export interface Evidence {
 
 /**
  * 대화에서 막혔던 지점 하나.
- * 강의노트를 위한 별도 툴을 두지 않고 노드에 붙는 이 구조체가 노트 본문 역할을 한다.
+ * 단독으로 존재하지 않고 항상 Comment 안에 담긴다.
  */
 export interface Weakpoint {
   /** 무엇에서 어떻게 막혔는지 한두 문장 */
@@ -58,8 +58,44 @@ export interface Weakpoint {
   misconception: string | null;
   /** 정정 후 — 무엇이 맞는 설명인지 */
   correction: string | null;
+  /** 근거가 된 대화 구간. 원문 그대로다 */
   evidence: Evidence[];
   source_conversation_id: string | null;
+}
+
+/**
+ * 노드 문서에 달리는 AI 코멘트.
+ * 구글독스 주석처럼 quote 문장이 문서 안에서 하이라이트되고 body 가 오른쪽에 표시된다.
+ * 약점은 항상 이 안에 있다 — 없을 수도 있고(보충 설명만) 있을 수도 있다.
+ */
+export interface Comment {
+  /** 오른쪽에 표시될 코멘트 본문 */
+  body: string;
+  /** 문서 안에서 하이라이트할 문장. 문서 원문 그대로. null 이면 문서 전체 */
+  quote: string | null;
+  /** 이 코멘트가 약점을 짚는 경우 */
+  weakpoint: Weakpoint | null;
+  source_conversation_id: string | null;
+}
+
+/** 노트 안에서 노드 문서들을 잘게 묶는 단위. 그래프에는 나타나지 않는다. */
+export interface Subtopic {
+  id: string;
+  title: string;
+  /** 이 소주제가 무엇인지 짧은 한 문장 */
+  blurb: string;
+}
+
+/**
+ * 단원. 그래프에서 세로 줄 하나가 된다.
+ * 단원과 소주제는 강의안을 넣어 노드를 처음 만들 때만 생성된다.
+ * 대화에서 생긴 노드는 새로 만들지 않고 기존 것에 분류만 된다.
+ */
+export interface Chapter {
+  id: string;
+  title: string;
+  /** 리스트 순서가 노트 표시 순서 */
+  subtopics: Subtopic[];
 }
 
 /** 지식그래프의 개념 노드. 좌표는 여기 없다. */
@@ -73,14 +109,19 @@ export interface Node {
   /** 개념 요약 1~3문장. 그래프에 붙는 한 줄 */
   summary: string;
   /**
-   * 상세 노트 본문. summary 와 다르다 — summary 는 개념이 무엇인지,
-   * note 는 이 강의가 이 개념을 어떻게 다뤘는지다. 약점 판정의 기준선이 된다
+   * 이 노드의 문서 본문. summary 는 그래프에 붙는 한 줄이고 document 는 읽는 글이다.
+   * 프론트는 노드들의 document 를 이어붙여 '노트' 화면을 만든다
    */
-  note: string;
+  document: string;
+  /** 속한 단원. 그래프 세로 줄 배치의 기준 */
+  chapter_id: string | null;
+  /** 속한 소주제. 노트 안 묶음. 있으면 그 소주제의 단원과 chapter_id 가 같아야 한다 */
+  subtopic_id: string | null;
   status: NodeStatus;
-  /** 이 노드가 어디서 생겼는지. 강의안 추출 경로가 'lecture' 를 명시적으로 넣는다 */
+  /** lecture 는 노트에 바로 펼쳐지고 conversation 은 접힌 채로 표시된다 */
   origin: NodeOrigin;
-  weakpoints: Weakpoint[];
+  /** 이 노드 문서에 달린 코멘트. 약점은 이 안에 있다 */
+  comments: Comment[];
   /** 이 노드를 만들어낸 대화. 시드 노드는 null */
   source_conversation_id: string | null;
   /** 이 노드를 만들어낸 강의안. 대화에서 생긴 노드는 null */
@@ -102,6 +143,8 @@ export interface Graph {
   version: number;
   nodes: Node[];
   edges: Edge[];
+  /** 리스트 순서가 그래프 세로 줄 순서 */
+  chapters: Chapter[];
 }
 
 /* ════════════════════════════════════════════════════════════════════

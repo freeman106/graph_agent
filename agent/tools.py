@@ -20,15 +20,18 @@ import json
 
 from agents import function_tool
 
-from contract.schema import NodeStatus, Relation, Weakpoint
+from contract.schema import Comment, NodeOrigin, NodeStatus, Relation
 
 from agent.store import GraphStore
 
 # 모든 툴이 공유하는 단일 저장소. 프로세스 하나에 그래프 하나.
 STORE = GraphStore()
 
-# 이번 실행이 다루는 대화 id. main 이 실행 시작 시 채운다.
+# 이번 실행의 출처. main 이 실행 시작 시 채운다.
+# 강의안 실행이면 origin="lecture" + lecture_id, 대화 실행이면 "conversation" + conversation_id.
 CURRENT_CONVERSATION_ID: str | None = None
+CURRENT_LECTURE_ID: str | None = None
+CURRENT_ORIGIN: NodeOrigin = "conversation"
 
 
 def _json(payload: object) -> str:
@@ -52,25 +55,72 @@ def search_nodes(query: str, limit: int = 5) -> str:
 
 
 @function_tool
-def create_node(name: str, summary: str, aliases: list[str]) -> str:
+def create_node(
+    name: str,
+    summary: str,
+    aliases: list[str],
+    document: str,
+    subtopic_id: str | None = None,
+) -> str:
     """지식그래프에 새 개념 노드를 만들고 node_id 를 돌려준다.
 
     호출 전에 search_nodes 로 기존 노드를 확인했어야 한다.
     aliases 에는 이 개념을 가리키는 다른 표기를 넣어라 — 한글 표기, 약어,
     띄어쓰기 변형 등. 다음 대화에서 같은 개념을 다시 찾을 때 쓰인다.
 
+    subtopic_id 는 **이미 있는 소주제만** 받는다. 단원과 소주제는 강의안을
+    넣을 때만 만들어지므로, 여기서는 기존 소주제 중 하나로 분류만 한다.
+    어디에도 맞지 않으면 비워 둬라.
+
     Args:
         name: 노드 표시 이름. 예) KV Cache
-        summary: 개념 요약 1~3문장.
+        summary: 개념 요약 1~3문장. 그래프 노드에 붙는 한 줄.
         aliases: 다른 표기 목록. 없으면 빈 배열.
+        document: 이 개념의 문서 본문. 읽을 수 있는 글로 쓴다.
+        subtopic_id: 분류할 기존 소주제 id. 없으면 null.
     """
     node_id = STORE.create_node(
         name=name,
         summary=summary,
         aliases=aliases,
+        document=document,
+        subtopic_id=subtopic_id,
+        origin=CURRENT_ORIGIN,
         source_conversation_id=CURRENT_CONVERSATION_ID,
+        source_lecture_id=CURRENT_LECTURE_ID,
     )
     return _json({"node_id": node_id})
+
+
+# ── 강의안 실행 전용 ──────────────────────────────────────────
+# 대화 실행에는 이 두 개가 노출되지 않는다. 단원을 못 만들게 하는 방법은
+# 지시가 아니라 툴을 안 주는 것이다.
+
+
+@function_tool
+def create_chapter(title: str) -> str:
+    """단원을 만들고 chapter_id 를 돌려준다. 그래프에서 세로 줄 하나가 된다.
+
+    강의안의 큰 목차 단위로 만들어라. 개념 하나마다 만들지 않는다.
+
+    Args:
+        title: 단원 제목. 예) 입력 표현
+    """
+    return _json({"chapter_id": STORE.create_chapter(title)})
+
+
+@function_tool
+def create_subtopic(chapter_id: str, title: str, blurb: str) -> str:
+    """단원 안에 소주제를 만들고 subtopic_id 를 돌려준다.
+
+    소주제는 노트에서 노드 문서들을 잘게 묶는 단위다. 그래프에는 안 보인다.
+
+    Args:
+        chapter_id: 이 소주제가 속할 기존 단원 id.
+        title: 소주제 제목.
+        blurb: 이 소주제가 무엇인지 짧은 한 문장.
+    """
+    return _json({"subtopic_id": STORE.create_subtopic(chapter_id, title, blurb)})
 
 
 @function_tool
@@ -124,20 +174,24 @@ def merge_nodes(keep_id: str, merge_id: str, reason: str) -> str:
 
 @function_tool
 def mark_progress(
-    node_id: str, status: NodeStatus, weakpoint: Weakpoint | None = None
+    node_id: str, status: NodeStatus, comment: Comment | None = None
 ) -> str:
-    """노드의 학습 상태를 기록하고, 있으면 대화 근거가 있는 약점을 추가한다.
+    """노드의 학습 상태를 기록하고, 있으면 문서에 코멘트를 단다.
 
-    weakpoint는 description, misconception, correction, evidence,
-    source_conversation_id 구조를 그대로 전달한다. 약점 판단은 모델이 수행하고,
-    이 도구는 판단 결과만 그래프에 저장한다.
+    comment.quote 는 그 노드 document 안에 있는 문장을 **그대로** 넣어야 한다.
+    프론트가 문서에서 그 문자열을 찾아 하이라이트하고 코멘트를 옆에 붙인다.
+    문장을 고쳐 쓰면 하이라이트가 걸리지 않는다. 문서 전체에 대한 코멘트면 비워 둔다.
+
+    약점을 짚는 코멘트라면 comment.weakpoint 를 채운다. 그 안의 evidence 는
+    quote_conversation 으로 가져온 대화 원문이어야 한다. 판단은 모델이 하고
+    이 도구는 저장만 한다.
 
     Args:
         node_id: 상태를 바꿀 기존 노드 ID.
         status: unlearned, learned, weak 중 하나.
-        weakpoint: 약점 정보. 없으면 null.
+        comment: 문서에 달 코멘트. 없으면 null.
     """
-    ok = STORE.mark_progress(node_id, status, weakpoint)
+    ok = STORE.mark_progress(node_id, status, comment)
     return _json({"ok": ok})
 
 

@@ -65,8 +65,7 @@ class Evidence(BaseModel):
 class Weakpoint(BaseModel):
     """대화에서 막혔던 지점 하나.
 
-    이 제품의 차별점이 담기는 자리다. 강의노트를 위한 별도 툴을 두지 않고
-    노드에 붙는 이 구조체가 노트 본문 역할을 한다.
+    이 제품의 차별점이 담기는 자리다. 단독으로 존재하지 않고 항상 Comment 안에 담긴다.
     """
 
     description: str = Field(description="무엇에서 어떻게 막혔는지 한두 문장")
@@ -77,9 +76,55 @@ class Weakpoint(BaseModel):
         default=None, description="정정 후 — 무엇이 맞는 설명인지"
     )
     evidence: list[Evidence] = Field(
-        default_factory=list, description="이 판단의 근거가 된 대화 구간"
+        default_factory=list,
+        description="이 판단의 근거가 된 대화 구간. 원문 그대로여야 한다 — "
+        "quote_conversation 으로 가져온 텍스트를 쓴다",
     )
     source_conversation_id: str | None = None
+
+
+class Comment(BaseModel):
+    """노드 문서에 달리는 AI 코멘트.
+
+    구글독스 주석처럼 동작한다 — quote 에 해당하는 문장이 문서 안에서
+    하이라이트되고, body 가 오른쪽에 표시된다.
+
+    약점은 항상 코멘트 안에 있다. 코멘트에 약점이 없을 수도 있고
+    (보충 설명만), 약점을 담을 수도 있다.
+    """
+
+    body: str = Field(description="오른쪽에 표시될 코멘트 본문")
+    quote: str | None = Field(
+        default=None,
+        description="문서 안에서 하이라이트할 문장. 문서 원문 그대로여야 프론트가 찾을 수 있다. "
+        "None 이면 문서 전체에 대한 코멘트",
+    )
+    weakpoint: Weakpoint | None = Field(
+        default=None, description="이 코멘트가 약점을 짚는 경우"
+    )
+    source_conversation_id: str | None = None
+
+
+class Subtopic(BaseModel):
+    """노트 안에서 노드 문서들을 잘게 묶는 단위. 그래프에는 나타나지 않는다."""
+
+    id: str
+    title: str
+    blurb: str = Field(default="", description="이 소주제가 무엇인지 짧은 한 문장")
+
+
+class Chapter(BaseModel):
+    """단원. 그래프에서 세로 줄 하나가 된다.
+
+    단원과 소주제는 **강의안을 넣어 노드를 처음 만들 때만** 생성된다.
+    대화에서 생긴 노드는 새로 만들지 않고 기존 것에 분류만 된다.
+    """
+
+    id: str
+    title: str
+    subtopics: list[Subtopic] = Field(
+        default_factory=list, description="리스트 순서가 노트 표시 순서"
+    )
 
 
 class Node(BaseModel):
@@ -95,17 +140,27 @@ class Node(BaseModel):
         description="같은 개념을 가리키는 다른 표기. search_nodes 가 이걸 본다",
     )
     summary: str = Field(default="", description="개념 요약 1~3문장. 그래프에 붙는 한 줄")
-    note: str = Field(
+    document: str = Field(
         default="",
-        description="상세 노트 본문. summary 와 다르다 — summary 는 개념이 무엇인지, "
-        "note 는 이 강의가 이 개념을 어떻게 다뤘는지다. 약점 판정의 기준선이 된다",
+        description="이 노드의 문서 본문. summary 와 다르다 — summary 는 그래프에 붙는 한 줄이고 "
+        "document 는 읽는 글이다. 프론트는 노드들의 document 를 이어붙여 '노트' 화면을 만든다",
+    )
+    chapter_id: str | None = Field(
+        default=None, description="속한 단원. 그래프 세로 줄 배치의 기준"
+    )
+    subtopic_id: str | None = Field(
+        default=None,
+        description="속한 소주제. 노트 안 묶음. 있으면 그 소주제가 속한 단원과 chapter_id 가 같아야 한다",
     )
     status: NodeStatus = "unlearned"
     origin: NodeOrigin = Field(
         default="conversation",
-        description="이 노드가 어디서 생겼는지. 강의안 추출 경로가 'lecture' 를 명시적으로 넣는다",
+        description="이 노드가 어디서 생겼는지. lecture 는 노트에 바로 펼쳐지고 "
+        "conversation 은 접힌 채로 표시된다",
     )
-    weakpoints: list[Weakpoint] = Field(default_factory=list)
+    comments: list[Comment] = Field(
+        default_factory=list, description="이 노드 문서에 달린 코멘트. 약점은 이 안에 있다"
+    )
     source_conversation_id: str | None = Field(
         default=None, description="이 노드를 만들어낸 대화. 시드 노드는 None"
     )
@@ -132,6 +187,9 @@ class Graph(BaseModel):
     version: int = SCHEMA_VERSION
     nodes: list[Node] = Field(default_factory=list)
     edges: list[Edge] = Field(default_factory=list)
+    chapters: list[Chapter] = Field(
+        default_factory=list, description="리스트 순서가 그래프 세로 줄 순서"
+    )
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -286,6 +344,9 @@ __all__ = [
     "Relation",
     "Evidence",
     "Weakpoint",
+    "Comment",
+    "Subtopic",
+    "Chapter",
     "Node",
     "Edge",
     "Graph",

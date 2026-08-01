@@ -1,7 +1,7 @@
 {
   "owner": "A · 에이전트 코어 담당",
   "hashes": {
-    "contract/schema.py": "1c2641d6aaf2fc70",
-    "contract/schema.ts": "5213b977c0dad9ce"
+    "contract/schema.py": "67639ab1821811c5",
+    "contract/schema.ts": "a341c4336d7482ea"
   }
 }
