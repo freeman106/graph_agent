@@ -30,6 +30,12 @@ button {
   background: #f3f0e8;
 }
 
+.graph-surface:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  background: #f7f5ef;
+}
+
 .font-mono-term {
   font-family: 'SF Mono', 'JetBrains Mono', 'Cascadia Mono', 'Consolas', ui-monospace, monospace;
 }

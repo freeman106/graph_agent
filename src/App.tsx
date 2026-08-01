@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RELATION_LABEL, type Node } from '../contract/schema';
 import Graph from './components/Graph';
 import Legend from './components/Legend';
@@ -46,9 +46,17 @@ export default function App() {
   const [activeStep, setActiveStep] = useState(-1);
   const [pasted, setPasted] = useState('');
   const [mapFilter, setMapFilter] = useState('all');
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const lineId = useRef(0);
   const runToken = useRef(0);
+  const graphSurfaceRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const syncFullscreen = () => setIsFullscreen(document.fullscreenElement === graphSurfaceRef.current);
+    document.addEventListener('fullscreenchange', syncFullscreen);
+    return () => document.removeEventListener('fullscreenchange', syncFullscreen);
+  }, []);
 
   const push = useCallback((kind: StreamLineKind, text: string) => {
     const id = ++lineId.current;
@@ -235,6 +243,14 @@ export default function App() {
     void run(text);
   };
 
+  const toggleFullscreen = async () => {
+    if (document.fullscreenElement === graphSurfaceRef.current) {
+      await document.exitFullscreen();
+    } else {
+      await graphSurfaceRef.current?.requestFullscreen();
+    }
+  };
+
   return (
     <div className="app-shell flex h-screen min-w-[1120px] flex-col overflow-hidden text-[#20201e]">
       <header className="flex h-14 shrink-0 items-center border-b border-[#262624] bg-[#f3f0e8] px-5">
@@ -264,7 +280,7 @@ export default function App() {
 
       <div className="flex min-h-0 flex-1">
         <main className="flex min-w-0 flex-1 flex-col bg-[#f7f5ef]">
-          <section className="relative min-h-0 flex-1 overflow-hidden">
+          <section ref={graphSurfaceRef} className="graph-surface relative min-h-0 flex-1 overflow-hidden">
             <div className="absolute top-0 right-0 left-0 z-20 flex h-[58px] items-center border-b border-[#d7d3ca] bg-[#f7f5ef]/95 px-5">
               <div>
                 <div className="text-[10px] font-black tracking-[0.16em] text-[#77736a]">TRANSFORMER / COGNITIVE ATLAS</div>
@@ -284,6 +300,21 @@ export default function App() {
                     {label}
                   </button>
                 ))}
+                <span className="mx-1 h-5 border-l border-[#bdb8ad]" />
+                <button
+                  onClick={() => setSelectedId(null)}
+                  disabled={!selectedId}
+                  className="px-2.5 py-1.5 text-[10px] font-bold text-[#5f5b53] transition hover:bg-[#e8e4db] disabled:cursor-default disabled:opacity-30"
+                >
+                  ↙ 전체 보기
+                </button>
+                <button
+                  onClick={() => void toggleFullscreen()}
+                  data-testid="graph-fullscreen"
+                  className={`px-2.5 py-1.5 text-[10px] font-bold transition ${isFullscreen ? 'bg-[#255c99] text-white' : 'text-[#5f5b53] hover:bg-[#e8e4db]'}`}
+                >
+                  {isFullscreen ? '× 전체 화면 종료' : '⛶ 전체 화면'}
+                </button>
               </div>
             </div>
 

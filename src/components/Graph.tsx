@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { RELATION_LABEL } from '../../contract/schema';
 import { GRAPH_VIEWBOX } from '../layout';
 import { wrapLabel, type RuntimeEdge, type RuntimeNode } from '../view';
 
 const NODE_RADIUS = 15;
+const FULL_VIEW = { x: 0, y: 0, width: GRAPH_VIEWBOX.width, height: GRAPH_VIEWBOX.height };
 
 interface Props {
   nodes: RuntimeNode[];
@@ -38,8 +39,44 @@ const edgeDash = (relation: RuntimeEdge['relation']) => {
 
 export default function Graph({ nodes, edges, selectedId, noteIds, filter, onSelect }: Props) {
   const [hoverId, setHoverId] = useState<string | null>(null);
+  const [viewBox, setViewBox] = useState(FULL_VIEW);
+  const animationFrame = useRef<number | null>(null);
   const byId = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
   const focusId = hoverId ?? selectedId;
+
+  useEffect(() => {
+    const selected = selectedId ? byId.get(selectedId) : null;
+    const target = selected
+      ? {
+          x: Math.max(0, Math.min(GRAPH_VIEWBOX.width - 520, selected.x - 520 * 0.34)),
+          y: Math.max(0, Math.min(GRAPH_VIEWBOX.height - 380, selected.y - 380 * 0.48)),
+          width: 520,
+          height: 380,
+        }
+      : FULL_VIEW;
+    const start = { ...viewBox };
+    const startedAt = performance.now();
+    const duration = selected ? 720 : 560;
+
+    if (animationFrame.current !== null) cancelAnimationFrame(animationFrame.current);
+    const animate = (now: number) => {
+      const progress = Math.min(1, (now - startedAt) / duration);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setViewBox({
+        x: start.x + (target.x - start.x) * eased,
+        y: start.y + (target.y - start.y) * eased,
+        width: start.width + (target.width - start.width) * eased,
+        height: start.height + (target.height - start.height) * eased,
+      });
+      if (progress < 1) animationFrame.current = requestAnimationFrame(animate);
+    };
+    animationFrame.current = requestAnimationFrame(animate);
+    return () => {
+      if (animationFrame.current !== null) cancelAnimationFrame(animationFrame.current);
+    };
+  // viewBox is intentionally captured at the start of each selection transition.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, byId]);
 
   const focusedEdges = useMemo(
     () => new Set(edges.filter((edge) => edge.from_id === focusId || edge.to_id === focusId).map((edge) => edge.id)),
@@ -87,7 +124,7 @@ export default function Graph({ nodes, edges, selectedId, noteIds, filter, onSel
 
   return (
     <svg
-      viewBox={`0 0 ${GRAPH_VIEWBOX.width} ${GRAPH_VIEWBOX.height}`}
+      viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
       className="h-full w-full bg-[#f7f5ef]"
       onClick={() => onSelect(null)}
     >
@@ -181,6 +218,7 @@ export default function Graph({ nodes, edges, selectedId, noteIds, filter, onSel
           return (
             <g
               key={node.id}
+              data-testid={`node-${node.id}`}
               transform={`translate(${node.x},${node.y})`}
               opacity={node.removing ? 0 : dimmed ? 0.18 : 1}
               className={node.removing ? 'fading' : undefined}
