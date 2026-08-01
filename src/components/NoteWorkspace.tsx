@@ -69,6 +69,34 @@ function quoteRange(body: string, quote: string): { start: number; end: number }
   return { start: starts[normalizedStart], end: ends[lastIndex] };
 }
 
+/**
+ * 하이라이트 표시 여부와 원문 연결 정보는 별개다. quote가 null이면 계약상 문서 전체에
+ * 연결된 코멘트이고, 편집 때문에 인용문 검색이 실패해도 앵커 자체를 끊지 않는다.
+ */
+function commentRange(body: string, comment: RuntimeNoteComment): { start: number; end: number; wholeParagraph: boolean } | null {
+  if (!body) return null;
+  if (!comment.quote) return { start: 0, end: body.length, wholeParagraph: true };
+
+  const matched = quoteRange(body, comment.quote);
+  if (matched) return { ...matched, wholeParagraph: false };
+
+  if (
+    comment.start !== undefined
+    && comment.end !== undefined
+    && comment.start >= 0
+    && comment.end > comment.start
+    && comment.start < body.length
+  ) {
+    return {
+      start: comment.start,
+      end: Math.min(comment.end, body.length),
+      wholeParagraph: false,
+    };
+  }
+
+  return { start: 0, end: body.length, wholeParagraph: true };
+}
+
 export default function NoteWorkspace({
   activeAnchorId,
   annotationsVisible,
@@ -250,16 +278,21 @@ export default function NoteWorkspace({
   };
 
   const renderHighlightedText = (body: string, paragraphId: string) => {
-    const ranges: Array<{ start: number; end: number; comment: RuntimeNoteComment | null; key: string; pending: boolean }> = visibleComments
-      .filter((comment) => comment.highlighted !== false && comment.anchorId === paragraphId && comment.quote)
+    const ranges: Array<{ start: number; end: number; comment: RuntimeNoteComment | null; key: string; pending: boolean; wholeParagraph: boolean }> = visibleComments
+      .filter((comment) => comment.highlighted !== false && comment.anchorId === paragraphId)
       .map((comment) => {
-        const found = comment.start === undefined || comment.end === undefined
-          ? quoteRange(body, comment.quote!)
-          : { start: comment.start, end: comment.end };
-        return { start: found?.start ?? -1, end: found?.end ?? -1, comment, key: comment.id, pending: false };
+        const found = commentRange(body, comment);
+        return {
+          start: found?.start ?? -1,
+          end: found?.end ?? -1,
+          comment,
+          key: comment.id,
+          pending: false,
+          wholeParagraph: found?.wholeParagraph ?? false,
+        };
       })
       .filter((range) => range.start >= 0)
-      .sort((a, b) => a.start - b.start || Number(Boolean(b.comment?.createdNow)) - Number(Boolean(a.comment?.createdNow)));
+      .sort((a, b) => a.start - b.start || (a.end - a.start) - (b.end - b.start) || Number(Boolean(b.comment?.createdNow)) - Number(Boolean(a.comment?.createdNow)));
 
     if (selectionDraft?.anchorId === paragraphId) {
       ranges.push({
@@ -268,6 +301,7 @@ export default function NoteWorkspace({
         comment: null,
         key: 'pending-selection',
         pending: true,
+        wholeParagraph: false,
       });
       ranges.sort((a, b) => a.start - b.start || Number(b.pending) - Number(a.pending));
     }
@@ -292,7 +326,7 @@ export default function NoteWorkspace({
           role="button"
           tabIndex={0}
           aria-label={`${comment.title} 코멘트 보기`}
-          className={`note-highlight cursor-pointer rounded-sm outline-none focus:ring-2 focus:ring-[#255c99] ${active ? 'note-highlight-active' : ''}`}
+          className={`note-highlight cursor-pointer rounded-sm outline-none focus:ring-2 focus:ring-[#255c99] ${range.wholeParagraph ? 'note-highlight-whole' : ''} ${active ? 'note-highlight-active' : ''}`}
           onClick={(event) => {
             event.stopPropagation();
             focusComment(comment);
@@ -724,7 +758,8 @@ export default function NoteWorkspace({
                 {visibleComments.filter((comment) => comment.anchorId !== null).map((comment) => {
                   const node = nodes.find((candidate) => candidate.id === comment.nodeId);
                   const active = activeCommentId === comment.id;
-                  const canRestoreHighlight = Boolean(comment.anchorId && comment.quote && quoteRange(noteContent[comment.anchorId] ?? '', comment.quote));
+                  const connectedBody = comment.anchorId ? (noteContent[comment.anchorId] ?? '') : '';
+                  const canRestoreHighlight = Boolean(comment.anchorId && commentRange(connectedBody, comment));
                   const relatedTargets = relatedTargetsFor(comment);
                   return (
                     <article
@@ -769,7 +804,11 @@ export default function NoteWorkspace({
                                 role="switch"
                                 aria-checked={comment.highlighted !== false}
                                 disabled={comment.highlighted === false && !canRestoreHighlight}
-                                onClick={() => onToggleCommentHighlight(comment.id, comment.highlighted === false)}
+                                onClick={() => {
+                                  const nextHighlighted = comment.highlighted === false;
+                                  onToggleCommentHighlight(comment.id, nextHighlighted);
+                                  if (nextHighlighted) focusComment(comment);
+                                }}
                                 className={`relative h-5 w-9 rounded-full transition-colors ${comment.highlighted !== false ? 'bg-[#e0a638]' : 'bg-[#d2cec5]'} disabled:cursor-not-allowed disabled:opacity-45`}
                               >
                                 <span className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${comment.highlighted !== false ? 'translate-x-4' : 'translate-x-0'}`} />
@@ -781,7 +820,8 @@ export default function NoteWorkspace({
                               <button onClick={() => setDeleteConfirmId(deleteConfirmId === comment.id ? null : comment.id)} className="text-[8.5px] font-black text-[#a2553d] hover:text-[#742f20]">삭제</button>
                             </div>
                           </div>
-                          {comment.highlighted === false && !canRestoreHighlight && <div className="mt-2 text-[8px] text-[#9a705d]">원문이 수정되어 하이라이트 연결이 끊어졌습니다.</div>}
+                          {comment.highlighted === false && <div className="mt-2 text-[8px] text-[#8a8177]">원문 연결은 유지됩니다. 스위치를 켜면 다시 표시됩니다.</div>}
+                          {comment.highlighted !== false && !canRestoreHighlight && <div className="mt-2 text-[8px] text-[#9a705d]">연결된 원문 문단을 찾지 못했습니다.</div>}
                           {deleteConfirmId === comment.id && (
                             <div className="mt-3 flex items-center justify-between border border-[#dfb5a6] bg-[#fff4ef] px-2.5 py-2 text-[8.5px] text-[#8f4933]">
                               <span>코멘트를 완전히 삭제할까요?</span>

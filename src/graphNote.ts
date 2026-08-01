@@ -54,6 +54,26 @@ export function buildNoteBundle(
   const anchorOf: Record<string, string> = {};
   const comments: RuntimeNoteComment[] = [];
 
+  const appendNodeComments = (node: RuntimeNode, anchorId: string) => {
+    node.comments.forEach((comment, index) => {
+      comments.push({
+        id: `${node.id}-c${index + 1}`,
+        anchorId,
+        quote: comment.quote,
+        nodeId: node.id,
+        title: comment.weakpoint ? '막힌 지점' : '코멘트',
+        body: comment.body,
+        source: comment.source_conversation_id ?? '대화',
+        relatedNodeId: null,
+        relatedAnchorId: null,
+        revealOnRun: false,
+        kind: 'agent',
+        highlighted: true,
+        archived: false,
+      });
+    });
+  };
+
   chapters.forEach((chapter, chapterIndex) => {
     const sectionIds: string[] = [];
 
@@ -68,23 +88,7 @@ export function buildNoteBundle(
         paragraphs.push({ id, nodeId: node.id, body });
         noteContent[id] = body;
         anchorOf[node.id] = id;
-        node.comments.forEach((comment, index) => {
-          comments.push({
-            id: `${node.id}-c${index + 1}`,
-            anchorId: id,
-            quote: comment.quote,
-            nodeId: node.id,
-            title: comment.weakpoint ? '막힌 지점' : '코멘트',
-            body: comment.body,
-            source: comment.source_conversation_id ?? '대화',
-            relatedNodeId: null,
-            relatedAnchorId: null,
-            revealOnRun: false,
-            kind: 'agent',
-            highlighted: true,
-            archived: false,
-          } as RuntimeNoteComment);
-        });
+        appendNodeComments(node, id);
       }
 
       if (paragraphs.length === 0) continue;
@@ -111,6 +115,7 @@ export function buildNoteBundle(
         });
         noteContent[`insert-${node.id}`] = body;
         anchorOf[node.id] = `insert-${node.id}`;
+        appendNodeComments(node, `insert-${node.id}`);
       }
     }
 

@@ -213,6 +213,11 @@ button {
   box-shadow: 0 0 0 3px rgba(37, 92, 153, 0.13);
 }
 
+.note-highlight-whole {
+  background: rgba(249, 203, 83, 0.24);
+  box-shadow: inset 3px 0 0 rgba(213, 154, 41, 0.72);
+}
+
 .note-selection-pending {
   margin: 0 -2px;
   padding: 2px;
