@@ -33,6 +33,7 @@ export interface RuntimeNoteComment {
   anchorId: string | null;
   quote: string | null;
   nodeId: string;
+  kind?: 'question' | 'conversation';
   title: string;
   body: string;
   source: string;

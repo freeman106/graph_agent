@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { RELATION_LABEL } from '../../contract/schema';
 import { GRAPH_VIEWBOX } from '../layout';
 import { wrapLabel, type RuntimeEdge, type RuntimeNode } from '../view';
+import { spectrumColor } from '../weakpoint';
 
 const NODE_RADIUS = 15;
 const FULL_VIEW = { x: 0, y: 0, width: GRAPH_VIEWBOX.width, height: GRAPH_VIEWBOX.height };
@@ -12,6 +13,8 @@ interface Props {
   selectedId: string | null;
   noteIds: Set<string>;
   filter: string;
+  spectrumMode: boolean;
+  spectrumScores: Record<string, number>;
   compact?: boolean;
   onSelect: (id: string | null) => void;
 }
@@ -38,7 +41,17 @@ const edgeDash = (relation: RuntimeEdge['relation']) => {
   return undefined;
 };
 
-export default function Graph({ nodes, edges, selectedId, noteIds, filter, compact = false, onSelect }: Props) {
+export default function Graph({
+  nodes,
+  edges,
+  selectedId,
+  noteIds,
+  filter,
+  spectrumMode,
+  spectrumScores,
+  compact = false,
+  onSelect,
+}: Props) {
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [viewBox, setViewBox] = useState(FULL_VIEW);
   const animationFrame = useRef<number | null>(null);
@@ -121,6 +134,8 @@ export default function Graph({ nodes, edges, selectedId, noteIds, filter, compa
     return ids;
   }, [edges, frontierIds]);
 
+  const spectrumActive = spectrumMode && Object.keys(spectrumScores).length > 0;
+
   const hovered = hoverId ? byId.get(hoverId) : null;
 
   return (
@@ -160,12 +175,17 @@ export default function Graph({ nodes, edges, selectedId, noteIds, filter, compa
           if (!from || !to) return null;
           const line = trimmedLine(from.x, from.y, to.x, to.y);
           const focused = focusedEdges.has(edge.id);
-          const filtered = filter === 'weak'
+          const edgeSpectrumScore = Math.max(spectrumScores[edge.from_id] ?? 0, spectrumScores[edge.to_id] ?? 0);
+          const spectrumFiltered = !spectrumActive || edgeSpectrumScore >= 0.1;
+          const filtered = (filter === 'weak'
             ? weakContext.has(edge.from_id) && weakContext.has(edge.to_id)
             : filter === 'frontier'
               ? frontierContext.has(edge.from_id) && frontierContext.has(edge.to_id)
-              : true;
+              : true) && spectrumFiltered;
           const dimmed = !filtered || (!!focusId && !focused);
+          const edgeStroke = spectrumActive && edgeSpectrumScore >= 0.1
+            ? spectrumColor(edgeSpectrumScore, 0.9)
+            : edge.isNew ? '#255c99' : focused ? '#262624' : '#aaa59b';
           return (
             <line
               key={edge.id}
@@ -173,8 +193,8 @@ export default function Graph({ nodes, edges, selectedId, noteIds, filter, compa
               y1={line.y1}
               x2={line.x2}
               y2={line.y2}
-              stroke={edge.isNew ? '#255c99' : focused ? '#262624' : '#aaa59b'}
-              strokeWidth={edge.isNew || focused ? 1.8 : 1.05}
+              stroke={edgeStroke}
+              strokeWidth={spectrumActive && edgeSpectrumScore >= 0.1 ? 1.4 + edgeSpectrumScore * 2.2 : edge.isNew || focused ? 1.8 : 1.05}
               strokeDasharray={edgeDash(edge.relation)}
               markerEnd={`url(#${edge.isNew ? 'map-arrow-new' : 'map-arrow'})`}
               opacity={edge.removing ? 0 : dimmed ? 0.12 : 0.7}
@@ -209,11 +229,13 @@ export default function Graph({ nodes, edges, selectedId, noteIds, filter, compa
           const isFocus = focusId === node.id;
           const isNeighbor = neighborIds.has(node.id);
           const frontier = frontierIds.has(node.id);
-          const filtered = filter === 'weak'
+          const spectrumScore = spectrumScores[node.id] ?? 0;
+          const spectrumFiltered = !spectrumActive || spectrumScore >= 0.1;
+          const filtered = (filter === 'weak'
             ? weakContext.has(node.id)
             : filter === 'frontier'
               ? frontierContext.has(node.id)
-              : true;
+              : true) && spectrumFiltered;
           const dimmed = !filtered || (!!focusId && !isFocus && !isNeighbor);
           const labelLines = wrapLabel(node.name, 20);
           return (
@@ -243,16 +265,17 @@ export default function Graph({ nodes, edges, selectedId, noteIds, filter, compa
                 {node.flash && <circle r="20" fill="none" stroke="#d85b35" strokeWidth="2" className="flash-ring" />}
                 {selectedId === node.id && <circle r="23" fill="none" stroke="#262624" strokeWidth="1.5" />}
                 {frontier && node.status === 'unlearned' && <circle r="20" fill="none" stroke="#255c99" strokeDasharray="2 4" />}
+                {spectrumActive && spectrumScore >= 0.1 && <circle r={18 + spectrumScore * 7} fill="none" stroke={spectrumColor(spectrumScore, 0.86)} strokeWidth={1.5 + spectrumScore * 2} />}
 
                 {node.status === 'weak' ? (
-                  <rect x="-11" y="-11" width="22" height="22" transform="rotate(45)" fill="#d85b35" stroke="#9f4025" strokeWidth="2" />
+                  <rect x="-11" y="-11" width="22" height="22" transform="rotate(45)" fill={spectrumActive && spectrumScore >= 0.1 ? spectrumColor(spectrumScore) : '#d85b35'} stroke="#9f4025" strokeWidth="2" />
                 ) : node.isNew ? (
-                  <rect x="-10" y="-10" width="20" height="20" fill="#255c99" stroke="#173f6d" strokeWidth="2" />
+                  <rect x="-10" y="-10" width="20" height="20" fill={spectrumActive && spectrumScore >= 0.1 ? spectrumColor(spectrumScore) : '#255c99'} stroke={spectrumActive && spectrumScore >= 0.1 ? '#9f4025' : '#173f6d'} strokeWidth="2" />
                 ) : (
                   <circle
                     r={node.status === 'learned' ? 10 : 8}
-                    fill={node.status === 'learned' ? '#262624' : '#f7f5ef'}
-                    stroke={node.status === 'learned' ? '#262624' : '#817c72'}
+                    fill={spectrumActive && spectrumScore >= 0.1 ? spectrumColor(spectrumScore) : node.status === 'learned' ? '#262624' : '#f7f5ef'}
+                    stroke={spectrumActive && spectrumScore >= 0.1 ? '#9f4025' : node.status === 'learned' ? '#262624' : '#817c72'}
                     strokeWidth="2"
                     strokeDasharray={node.status === 'unlearned' ? '3 2' : undefined}
                   />
@@ -275,12 +298,13 @@ export default function Graph({ nodes, edges, selectedId, noteIds, filter, compa
 
       {hovered && !compact && (
         <g transform="translate(738,586)" pointerEvents="none">
-          <rect width="280" height="116" fill="#f1ede4" stroke="#262624" />
+          <rect width="280" height={spectrumActive ? 132 : 116} fill="#f1ede4" stroke="#262624" />
           <text x="14" y="21" fontSize="9" fontWeight="900" letterSpacing="1.4" fill="#77736a">CONCEPT INDEX</text>
           <text x="14" y="45" fontSize="15" fontWeight="900" fill="#262624">{hovered.name}</text>
           <text x="14" y="65" fontSize="10" fill="#77736a">{hovered.status === 'weak' ? '약점 기록 있음' : hovered.status === 'learned' ? '학습 완료' : '아직 학습하지 않음'} · 연결 {edges.filter((edge) => edge.from_id === hovered.id || edge.to_id === hovered.id).length}개</text>
-          <line x1="14" y1="78" x2="266" y2="78" stroke="#c7c2b8" />
-          <text x="14" y="99" fontSize="10.5" fontWeight="700" fill="#255c99">클릭하여 요약과 근거 열기 →</text>
+          {spectrumActive && <text x="14" y="82" fontSize="10" fontWeight="700" fill="#9f4025">약점 집중도 {Math.round((spectrumScores[hovered.id] ?? 0) * 100)}%</text>}
+          <line x1="14" y1={spectrumActive ? 94 : 78} x2="266" y2={spectrumActive ? 94 : 78} stroke="#c7c2b8" />
+          <text x="14" y={spectrumActive ? 115 : 99} fontSize="10.5" fontWeight="700" fill="#255c99">클릭하여 요약과 근거 열기 →</text>
         </g>
       )}
     </svg>

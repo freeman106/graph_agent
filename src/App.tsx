@@ -8,6 +8,12 @@ import StreamPanel from './components/StreamPanel';
 import { anchorForNode, NOTE_COMMENTS } from './lectureNote';
 import { NODE_LAYOUT, placeNewNode, type Point } from './layout';
 import {
+  analyzeQuestion,
+  classifyWeakpoint,
+  computeSpectrumScores,
+  mergeWeakpoint,
+} from './weakpoint';
+import {
   CONVERSATION_META,
   DETECTED_WEAKPOINT,
   INITIAL_EDGES,
@@ -49,6 +55,7 @@ export default function App() {
   const [activeStep, setActiveStep] = useState(-1);
   const [pasted, setPasted] = useState('');
   const [mapFilter, setMapFilter] = useState('all');
+  const [spectrumMode, setSpectrumMode] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [noteMode, setNoteMode] = useState(false);
   const [activeNoteAnchor, setActiveNoteAnchor] = useState('p-summary-1');
@@ -79,6 +86,10 @@ export default function App() {
     return ids;
   }, [nodes, annotationsVisible, noteComments]);
   const selectedNode = selectedId ? (nodes.find((node) => node.id === selectedId) ?? null) : null;
+  const spectrumScores = useMemo(
+    () => computeSpectrumScores(nodes, edges, resolvedWeakpoints),
+    [nodes, edges, resolvedWeakpoints],
+  );
   const learnedCount = nodes.filter((node) => node.status === 'learned').length;
   const weakCount = nodes.filter((node) => node.status === 'weak').length;
   const openCount = nodes.filter((node) => node.status === 'unlearned').length;
@@ -94,6 +105,7 @@ export default function App() {
     setActiveStep(-1);
     setPasted('');
     setMapFilter('all');
+    setSpectrumMode(false);
     setNoteMode(false);
     setActiveNoteAnchor('p-summary-1');
     setNoteComments(NOTE_COMMENTS.map((comment) => ({ ...comment })));
@@ -112,31 +124,53 @@ export default function App() {
   };
 
   const addNoteComment = (comment: RuntimeNoteComment, sourceText: string) => {
-    setNoteComments((previous) => [...previous, comment]);
-    setSelectedId(comment.nodeId);
+    const node = nodes.find((candidate) => candidate.id === comment.nodeId);
+    const isQuestion = comment.kind === 'question' || comment.title === '선택한 내용에 직접 질문';
+    const analysis = isQuestion && node
+      ? analyzeQuestion({
+          question: sourceText,
+          quote: comment.quote ?? '',
+          nodeId: comment.nodeId,
+          nodes,
+          edges,
+          sourceConversationId: `note-question-${comment.id}`,
+        })
+      : null;
+    const analyzedComment = {
+      ...comment,
+      relatedNodeId: analysis?.relatedNodeIds[0] ?? comment.relatedNodeId,
+    };
+    setNoteComments((previous) => [...previous, analyzedComment]);
+    if (node) setSelectedId(comment.nodeId);
     if (comment.anchorId) setActiveNoteAnchor(comment.anchorId);
-    setNodes((previous) => previous.map((node) => {
-      if (node.id !== comment.nodeId) return node;
-      return {
-        ...node,
-        status: 'weak',
-        flash: true,
-        weakpoints: [
-          ...node.weakpoints,
-          {
-            description: `${comment.title}: ${comment.body}`,
-            misconception: null,
-            correction: null,
-            evidence: [{ index: 0, speaker: 'user', text: sourceText }],
-            source_conversation_id: `note-selection-${comment.id}`,
-          },
-        ],
-      };
+
+    if (!analysis || analysis.action === 'ignore' || !analysis.weakpoint) {
+      push('detail', `  · ${nameOf(comment.nodeId)} — 질문은 기록했지만 별도 약점으로 분류하지 않음`);
+      return;
+    }
+
+    const knownMergeIndex = node?.weakpoints.findIndex((weakpoint) => classifyWeakpoint(weakpoint) === analysis.kind) ?? -1;
+    const knownTargetIndex = analysis.action === 'merge' && knownMergeIndex >= 0
+      ? knownMergeIndex
+      : node?.weakpoints.length ?? 0;
+    setResolvedWeakpoints((previousResolved) => {
+      const next = new Set(previousResolved);
+      next.delete(weakpointKey(analysis.targetNodeId, knownTargetIndex));
+      return next;
+    });
+    setNodes((previous) => previous.map((currentNode) => {
+      if (currentNode.id !== analysis.targetNodeId) return currentNode;
+      const mergeIndex = currentNode.weakpoints.findIndex((weakpoint) => classifyWeakpoint(weakpoint) === analysis.kind);
+      const weakpoints = analysis.action === 'merge' && mergeIndex >= 0
+        ? currentNode.weakpoints.map((weakpoint, index) => index === mergeIndex ? mergeWeakpoint(weakpoint, analysis.weakpoint!) : weakpoint)
+        : [...currentNode.weakpoints, analysis.weakpoint!];
+      return { ...currentNode, status: 'weak', flash: true, weakpoints };
     }));
     window.setTimeout(() => {
       setNodes((previous) => previous.map((node) => node.flash ? { ...node, flash: false } : node));
     }, 760);
-    push('detail', `  ✎ ${nameOf(comment.nodeId)} — 노트 선택 영역에서 새 코멘트와 막힌 지점 추가`);
+    push('detail', `  ✎ ${nameOf(analysis.targetNodeId)} — ${analysis.action === 'merge' ? '기존 약점에 근거 병합' : '새 약점 유형 추가'}`);
+    push('reason', `  ${analysis.rationale}`);
   };
 
   const toggleWeakpoint = (nodeId: string, index: number, checked: boolean) => {
@@ -411,6 +445,13 @@ export default function App() {
                 ))}
                 <span className="mx-1 h-5 border-l border-[#bdb8ad]" />
                 <button
+                  onClick={() => setSpectrumMode((value) => !value)}
+                  className={`px-2.5 py-1.5 text-[10px] font-bold transition ${spectrumMode ? 'bg-[#9f4025] text-white' : 'text-[#9f4025] hover:bg-[#fff1eb]'}`}
+                >
+                  {spectrumMode ? '스펙트럼 닫기' : '스펙트럼 보기'}
+                </button>
+                <span className="mx-1 h-5 border-l border-[#bdb8ad]" />
+                <button
                   onClick={() => setSelectedId(null)}
                   disabled={!selectedId}
                   className="px-2.5 py-1.5 text-[10px] font-bold text-[#5f5b53] transition hover:bg-[#e8e4db] disabled:cursor-default disabled:opacity-30"
@@ -434,7 +475,7 @@ export default function App() {
             </div>
 
             <div className={`absolute inset-0 ${noteMode ? 'top-[42px]' : 'top-[58px]'}`}>
-              <Graph nodes={nodes} edges={edges} selectedId={selectedId} noteIds={noteIds} filter={mapFilter} onSelect={selectFromGraph} compact={noteMode} />
+              <Graph nodes={nodes} edges={edges} selectedId={selectedId} noteIds={noteIds} filter={mapFilter} spectrumMode={spectrumMode} spectrumScores={spectrumScores} onSelect={selectFromGraph} compact={noteMode} />
               {!noteMode && <Legend />}
               {selectedNode && !noteMode && (
                 <NodeDetail

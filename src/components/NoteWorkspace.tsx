@@ -150,6 +150,18 @@ export default function NoteWorkspace({
     setComposerText('');
   };
 
+  const handleParagraphDoubleClick = (event: React.MouseEvent<HTMLElement>) => {
+    const paragraph = (event.target as HTMLElement).closest<HTMLElement>('[data-note-paragraph]');
+    if (!paragraph || !articleRef.current?.contains(paragraph)) return;
+    const nodeId = paragraph.dataset.nodeId;
+    if (!nodeId) return;
+    const quote = (paragraph.textContent ?? '').replace(/\s+/g, ' ').trim();
+    if (quote.length < 2) return;
+    setSelectionDraft({ anchorId: paragraph.id, nodeId, quote: quote.slice(0, 320) });
+    setComposerMode('question');
+    setComposerText('');
+  };
+
   const submitComment = () => {
     if (!selectionDraft || composerText.trim().length < 2) return;
     const node = nodes.find((candidate) => candidate.id === selectionDraft.nodeId);
@@ -161,6 +173,7 @@ export default function NoteWorkspace({
       anchorId: selectionDraft.anchorId,
       quote: selectionDraft.quote,
       nodeId: selectionDraft.nodeId,
+      kind: isQuestion ? 'question' : 'conversation',
       title: isQuestion ? '선택한 내용에 직접 질문' : 'GPT 대화에서 가져온 코멘트',
       body: isQuestion
         ? `질문: ${cleanInput} · GPT 답변: ${node?.summary ?? '선택한 문장은 이 개념의 핵심 관계를 설명하는 부분입니다.'} 이 답을 이해했다면 ${node?.name ?? '해당 개념'} 노드의 막힌 지점 체크리스트에서 완료할 수 있습니다.`
@@ -189,7 +202,7 @@ export default function NoteWorkspace({
           <h2 className="mt-1 truncate text-[15px] font-black tracking-[-0.02em] text-[#262624]">{LECTURE_NOTE_META.title}</h2>
         </div>
         <div className="ml-auto flex items-center gap-2">
-          <span className="border border-[#bdb8ad] px-2 py-1 font-mono-term text-[9px] text-[#77736a]">드래그해서 질문하기</span>
+          <span className="border border-[#bdb8ad] px-2 py-1 font-mono-term text-[9px] text-[#77736a]">더블클릭/드래그해서 질문하기</span>
           <button onClick={onClose} className="border border-[#262624] bg-[#262624] px-3 py-2 text-[10px] font-black text-[#f7f5ef] transition hover:bg-[#464640]">지도로 돌아가기</button>
         </div>
       </header>
@@ -210,7 +223,7 @@ export default function NoteWorkspace({
             </div>}
           </nav>
 
-          <article ref={articleRef} onMouseUp={handleTextSelection} className="note-paper border border-[#c9c4ba] bg-[#fbfaf6] shadow-[0_16px_48px_rgba(38,38,36,0.10)]">
+          <article ref={articleRef} onMouseUp={handleTextSelection} onDoubleClick={handleParagraphDoubleClick} className="note-paper border border-[#c9c4ba] bg-[#fbfaf6] shadow-[0_16px_48px_rgba(38,38,36,0.10)]">
             <div className="border-b border-[#d8d3c9] px-12 pt-12 pb-10">
               <div className="flex items-center gap-2 text-[9px] font-black tracking-[0.16em] text-[#8c877d]"><span>{LECTURE_NOTE_META.course}</span><span>·</span><span>{LECTURE_NOTE_META.updatedAt}</span></div>
               <h1 className="mt-5 max-w-[560px] text-[36px] leading-[1.12] font-black tracking-[-0.055em] text-[#262624]">{LECTURE_NOTE_META.title}</h1>
