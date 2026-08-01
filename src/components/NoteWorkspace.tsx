@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { RELATION_LABEL } from '../../contract/schema';
 import { anchorForNode as defaultAnchorForNode, LECTURE_NOTE_MAJOR_SECTIONS as DEFAULT_MAJORS, LECTURE_NOTE_META as DEFAULT_META, LECTURE_NOTE_SECTIONS as DEFAULT_SECTIONS, NOTE_INSERTIONS as DEFAULT_INSERTIONS } from '../lectureNote';
 import { askNoteQuestion } from '../agentApi';
@@ -108,6 +108,8 @@ export default function NoteWorkspace({
   const scrollRef = useRef<HTMLDivElement>(null);
   const articleRef = useRef<HTMLElement>(null);
   const commentCardRefs = useRef(new Map<string, HTMLElement>());
+  const mountedAtRef = useRef(performance.now());
+  const editScrollAnchorRef = useRef<{ id: string; offset: number } | null>(null);
   const [outlineOpen, setOutlineOpen] = useState(true);
   const [activeCommentId, setActiveCommentId] = useState<string | null>(null);
   const [selectionDraft, setSelectionDraft] = useState<SelectionDraft | null>(null);
@@ -134,16 +136,76 @@ export default function NoteWorkspace({
   );
   const orphanComments = visibleComments.filter((comment) => comment.anchorId === null);
 
-  const scrollToAnchor = (anchorId: string) => {
-    const target = scrollRef.current?.querySelector<HTMLElement>(`#${CSS.escape(anchorId)}`);
-    target?.scrollIntoView({
-      behavior: prefersReducedMotion() ? 'auto' : 'smooth',
-      block: 'center',
+  const scrollToAnchor = (anchorId: string, behavior?: ScrollBehavior) => {
+    if (!anchorId) return;
+    const scroller = scrollRef.current;
+    const target = scroller?.querySelector<HTMLElement>(`#${CSS.escape(anchorId)}`);
+    if (!scroller || !target) return;
+    const scrollerRect = scroller.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const targetCenterInScroll = scroller.scrollTop
+      + targetRect.top - scrollerRect.top
+      + targetRect.height / 2;
+    scroller.scrollTo({
+      top: targetCenterInScroll - scroller.clientHeight / 2,
+      behavior: behavior ?? (prefersReducedMotion() ? 'auto' : 'smooth'),
     });
   };
 
+  const toggleNoteEditing = () => {
+    const scroller = scrollRef.current;
+    if (scroller) {
+      const scrollerRect = scroller.getBoundingClientRect();
+      const viewportCenter = scrollerRect.top + scrollerRect.height / 2;
+      const paragraphs = Array.from(
+        scroller.querySelectorAll<HTMLElement>('[data-note-paragraph]'),
+      );
+      const anchor = paragraphs.reduce<HTMLElement | null>((closest, paragraph) => {
+        if (!paragraph.id) return closest;
+        const rect = paragraph.getBoundingClientRect();
+        const distance = rect.top <= viewportCenter && rect.bottom >= viewportCenter
+          ? 0
+          : Math.min(Math.abs(rect.top - viewportCenter), Math.abs(rect.bottom - viewportCenter));
+        if (!closest) return paragraph;
+        const closestRect = closest.getBoundingClientRect();
+        const closestDistance = closestRect.top <= viewportCenter && closestRect.bottom >= viewportCenter
+          ? 0
+          : Math.min(
+              Math.abs(closestRect.top - viewportCenter),
+              Math.abs(closestRect.bottom - viewportCenter),
+            );
+        return distance < closestDistance ? paragraph : closest;
+      }, null);
+      if (anchor) {
+        editScrollAnchorRef.current = {
+          id: anchor.id,
+          offset: anchor.getBoundingClientRect().top - scrollerRect.top,
+        };
+      }
+    }
+    setIsEditingNote((value) => !value);
+    setSelectionDraft(null);
+    setComposerText('');
+    window.getSelection()?.removeAllRanges();
+  };
+
+  useLayoutEffect(() => {
+    const saved = editScrollAnchorRef.current;
+    const scroller = scrollRef.current;
+    if (!saved || !scroller) return;
+    const target = scroller.querySelector<HTMLElement>(`#${CSS.escape(saved.id)}`);
+    if (target) {
+      const scrollerTop = scroller.getBoundingClientRect().top;
+      const currentOffset = target.getBoundingClientRect().top - scrollerTop;
+      scroller.scrollTop += currentOffset - saved.offset;
+    }
+    editScrollAnchorRef.current = null;
+  }, [isEditingNote]);
+
   useEffect(() => {
     const isInsertion = NOTE_INSERTIONS.some((insertion) => insertion.id === activeAnchorId);
+    const mountedFor = performance.now() - mountedAtRef.current;
+    const isOpening = mountedFor < 520;
     if (isInsertion) {
       setExpandedInsertions((previous) => {
         const next = new Set(previous);
@@ -151,7 +213,13 @@ export default function NoteWorkspace({
         return next;
       });
     }
-    const timer = window.setTimeout(() => scrollToAnchor(activeAnchorId), isInsertion ? 520 : 180);
+    // 처음 노트를 열 때는 workspace-in(520ms)이 끝난 뒤 좌표를 잰다.
+    // 이미 열린 노트에서 미니맵으로 이동할 때는 기존의 빠른 반응을 유지한다.
+    const delay = isInsertion ? 560 : isOpening ? Math.max(0, 560 - mountedFor) : 180;
+    const timer = window.setTimeout(
+      () => scrollToAnchor(activeAnchorId, isOpening ? 'auto' : undefined),
+      delay,
+    );
     return () => window.clearTimeout(timer);
   }, [activeAnchorId, navigationVersion]);
 
@@ -408,6 +476,9 @@ export default function NoteWorkspace({
                     return (
                       <textarea
                         key={`edit-${paragraphId}`}
+                        id={paragraphId}
+                        data-note-paragraph
+                        data-node-id={insertion.nodeId}
                         defaultValue={body}
                         rows={Math.max(4, Math.ceil(body.length / 48))}
                         onBlur={(event) => onUpdateNoteContent(paragraphId, event.currentTarget.value)}
@@ -450,12 +521,7 @@ export default function NoteWorkspace({
         <div className="ml-auto flex items-center gap-2">
           <span className="flex items-center gap-2 border border-[#d5bd91] bg-[#fff9ec] px-2.5 py-1.5 text-[9px] font-bold text-[#705a3e]"><i className="h-2.5 w-5 bg-[#f4cf73]" /> 노란색 = 대화·질문이 연결된 원문</span>
           <button
-            onClick={() => {
-              setIsEditingNote((value) => !value);
-              setSelectionDraft(null);
-              setComposerText('');
-              window.getSelection()?.removeAllRanges();
-            }}
+            onClick={toggleNoteEditing}
             className={`border px-3 py-2 text-[9px] font-black transition ${isEditingNote ? 'border-[#8b552d] bg-[#fff4e8] text-[#8b552d]' : 'border-[#bdb8ad] text-[#666259] hover:border-[#7b766d]'}`}
           >
             {isEditingNote ? '편집 완료' : '노트 편집'}
@@ -464,7 +530,7 @@ export default function NoteWorkspace({
         </div>
       </header>
 
-      <div ref={scrollRef} className="note-scroll light-scroll min-h-0 flex-1 overflow-y-auto scroll-smooth">
+      <div ref={scrollRef} className="note-scroll light-scroll min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto grid w-full max-w-[1320px] grid-cols-[190px_minmax(520px,720px)_300px] items-start gap-7 px-7 pt-8 pb-32">
           <nav className={`sticky top-[206px] mt-[210px] border-t border-[#262624] transition-opacity ${outlineOpen ? 'opacity-100' : 'opacity-70'}`} aria-label="강의노트 목차">
             <button onClick={() => setOutlineOpen((value) => !value)} className="flex w-full items-center justify-between py-3 text-left text-[9px] font-black tracking-[0.16em] text-[#77736a]">
@@ -521,6 +587,9 @@ export default function NoteWorkspace({
                         return (
                           <textarea
                             key={`edit-${paragraph.id}`}
+                            id={paragraph.id}
+                            data-note-paragraph
+                            data-node-id={paragraph.nodeId}
                             defaultValue={body}
                             rows={Math.max(4, Math.ceil(body.length / 48))}
                             onBlur={(event) => onUpdateNoteContent(paragraph.id, event.currentTarget.value)}

@@ -13,7 +13,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -59,6 +59,54 @@ function subjectPythonEnv(subjectId) {
   return pythonEnv({ KG_STATE_DIR: path.join(stateDir(), 'subjects', subjectId) });
 }
 
+function graphFingerprint(raw) {
+  if (!raw) return JSON.stringify({ nodes: [], edges: [], chapters: [] });
+  try {
+    const graph = JSON.parse(raw);
+    return JSON.stringify({
+      nodes: graph.nodes ?? [],
+      edges: graph.edges ?? [],
+      chapters: graph.chapters ?? [],
+    });
+  } catch {
+    return raw;
+  }
+}
+
+function graphIsEmpty(raw) {
+  if (!raw) return true;
+  try {
+    const graph = JSON.parse(raw);
+    return (graph.nodes?.length ?? 0) === 0
+      && (graph.edges?.length ?? 0) === 0
+      && (graph.chapters?.length ?? 0) === 0;
+  } catch {
+    return false;
+  }
+}
+
+function restoreGraphSnapshot(subjectId, sourceName, inverseName) {
+  const sourcePath = subjectStateFile(subjectId, sourceName);
+  if (!existsSync(sourcePath)) return null;
+  const graphPath = subjectStateFile(subjectId, 'graph.json');
+  const currentExisted = existsSync(graphPath);
+  const currentGraph = currentExisted ? readFileSync(graphPath, 'utf-8').replace(/^﻿/, '') : null;
+  const snapshot = JSON.parse(readFileSync(sourcePath, 'utf-8').replace(/^﻿/, ''));
+
+  writeFileSync(
+    subjectStateFile(subjectId, inverseName),
+    JSON.stringify({ existed: currentExisted, graph: currentGraph }),
+    'utf-8',
+  );
+  if (snapshot.existed) {
+    writeFileSync(graphPath, String(snapshot.graph ?? ''), 'utf-8');
+  } else if (existsSync(graphPath)) {
+    unlinkSync(graphPath);
+  }
+  unlinkSync(sourcePath);
+  return snapshot.existed ? JSON.parse(snapshot.graph) : null;
+}
+
 // 그래프 상태가 JSON 파일 하나라 동시에 두 번 돌리면 서로를 덮어쓴다.
 let running = false;
 
@@ -87,6 +135,80 @@ export function agentApi() {
         }
       });
 
+      // 마지막 대화 실행 직전 그래프를 과목별로 한 번만 되돌린다.
+      server.middlewares.use('/api/agent/undo', async (req, res) => {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        try {
+          if (running) {
+            res.statusCode = 409;
+            res.end(JSON.stringify({ error: '실행 중에는 취소할 수 없습니다.' }));
+            return;
+          }
+          if (req.method === 'GET') {
+            const url = new URL(req.url ?? '/', 'http://localhost');
+            const subjectId = normalizeSubjectId(url.searchParams.get('subjectId'));
+            res.end(JSON.stringify({ available: existsSync(subjectStateFile(subjectId, 'graph.undo.json')) }));
+            return;
+          }
+
+          const raw = await readBody(req);
+          const payload = raw ? JSON.parse(raw) : {};
+          const subjectId = normalizeSubjectId(payload.subjectId);
+          const undoPath = subjectStateFile(subjectId, 'graph.undo.json');
+          if (!existsSync(undoPath)) {
+            res.statusCode = 404;
+            res.end(JSON.stringify({ error: '취소할 마지막 실행이 없습니다.' }));
+            return;
+          }
+
+          const graph = restoreGraphSnapshot(
+            subjectId,
+            'graph.undo.json',
+            'graph.redo.json',
+          );
+          res.end(JSON.stringify({ graph }));
+        } catch (error) {
+          res.statusCode = 500;
+          res.end(JSON.stringify({ error: error.message ?? '마지막 실행을 취소하지 못했습니다.' }));
+        }
+      });
+
+      server.middlewares.use('/api/agent/redo', async (req, res) => {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        try {
+          if (running) {
+            res.statusCode = 409;
+            res.end(JSON.stringify({ error: '실행 중에는 다시 실행할 수 없습니다.' }));
+            return;
+          }
+          if (req.method === 'GET') {
+            const url = new URL(req.url ?? '/', 'http://localhost');
+            const subjectId = normalizeSubjectId(url.searchParams.get('subjectId'));
+            res.end(JSON.stringify({ available: existsSync(subjectStateFile(subjectId, 'graph.redo.json')) }));
+            return;
+          }
+
+          const raw = await readBody(req);
+          const payload = raw ? JSON.parse(raw) : {};
+          const subjectId = normalizeSubjectId(payload.subjectId);
+          const redoPath = subjectStateFile(subjectId, 'graph.redo.json');
+          if (!existsSync(redoPath)) {
+            res.statusCode = 404;
+            res.end(JSON.stringify({ error: '다시 실행할 기록이 없습니다.' }));
+            return;
+          }
+          const graph = restoreGraphSnapshot(
+            subjectId,
+            'graph.redo.json',
+            'graph.undo.json',
+          );
+          res.end(JSON.stringify({ graph }));
+        } catch (error) {
+          res.statusCode = 500;
+          res.end(JSON.stringify({ error: error.message ?? '실행 취소를 되돌리지 못했습니다.' }));
+        }
+      });
+
       // 강의안 실행 — 빈 그래프에서 시작해 단원·소주제·노드·문서를 만든다.
       // 대화 실행과 배관이 같아 같은 핸들러를 쓰고 인자만 다르게 준다.
       server.middlewares.use('/api/agent/lecture', (req, res) =>
@@ -95,7 +217,7 @@ export function agentApi() {
           '--empty',
           '--lecture',
           textPath,
-        ]),
+        ], false),
       );
 
       server.middlewares.use('/api/agent/share', async (req, res) => {
@@ -155,10 +277,10 @@ export function agentApi() {
           '--stream-json',
           '--conversation-text',
           textPath,
-        ]),
+        ], true),
       );
 
-      async function runAgent(req, res, buildArgs) {
+      async function runAgent(req, res, buildArgs, trackUndo) {
         const send = (event) => res.write(`data: ${JSON.stringify(event)}\n\n`);
 
         const state = probe();
@@ -203,6 +325,9 @@ export function agentApi() {
         res.flushHeaders?.();
 
         running = true;
+        const graphPath = subjectStateFile(subjectId, 'graph.json');
+        const graphExistedBefore = existsSync(graphPath);
+        const graphBefore = graphExistedBefore ? readFileSync(graphPath, 'utf-8').replace(/^﻿/, '') : null;
         const childArgs = buildArgs(textPath);
         const needsEmptyGraph = subjectId !== DEFAULT_SUBJECT_ID
           && !existsSync(subjectStateFile(subjectId, 'graph.json'));
@@ -236,6 +361,23 @@ export function agentApi() {
 
         child.on('close', (code) => {
           running = false;
+          if (trackUndo) {
+            const graphExistsAfter = existsSync(graphPath);
+            const graphAfter = graphExistsAfter ? readFileSync(graphPath, 'utf-8').replace(/^﻿/, '') : null;
+            const graphChanged = graphFingerprint(graphBefore) !== graphFingerprint(graphAfter);
+            if (graphChanged) {
+              writeFileSync(
+                subjectStateFile(subjectId, 'graph.undo.json'),
+                JSON.stringify({ existed: graphExistedBefore, graph: graphBefore }),
+                'utf-8',
+              );
+              const redoPath = subjectStateFile(subjectId, 'graph.redo.json');
+              if (existsSync(redoPath)) unlinkSync(redoPath);
+            } else if (!graphExistedBefore && graphExistsAfter && graphIsEmpty(graphAfter)) {
+              // 첫 실행 준비용 빈 파일도 무관한 입력 뒤에는 남기지 않는다.
+              unlinkSync(graphPath);
+            }
+          }
           if (code === 0) {
             send({ type: 'done' });
           } else {

@@ -83,6 +83,12 @@ button {
   stroke-width: 5px;
 }
 
+/* SVG의 focusable <g>를 클릭할 때 브라우저가 그리는 검은 선택 사각형을 숨긴다. */
+.graph-node:focus,
+.graph-node:focus-visible {
+  outline: none;
+}
+
 @keyframes node-pop {
   0% { transform: scale(0); opacity: 0; }
   70% { transform: scale(1.15); opacity: 1; }

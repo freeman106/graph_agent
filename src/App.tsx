@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { RELATION_LABEL, type Chapter, type Edge, type Node, type StreamEvent } from '../contract/schema';
+import { RELATION_LABEL, type Chapter, type Edge, type Graph as ContractGraph, type Node, type StreamEvent } from '../contract/schema';
 import Graph from './components/Graph';
 import Legend from './components/Legend';
 import NodeDetail from './components/NodeDetail';
@@ -23,7 +23,7 @@ import {
   TOOL_STEPS,
   WEAKPOINT_NODE_ID,
 } from './mock';
-import { fetchGraph, fetchSharedChat, isShareUrl, probeAgent, runAgent, runLecture, toStreamLine, type AgentStatus } from './agentApi';
+import { fetchGraph, fetchRedoStatus, fetchSharedChat, fetchUndoStatus, isShareUrl, probeAgent, redoLastRun, runAgent, runLecture, toStreamLine, undoLastRun, type AgentStatus } from './agentApi';
 import type { RuntimeEdge, RuntimeNode, RuntimeNoteComment, RuntimePipelineStep, StreamLine, StreamLineKind } from './view';
 
 type Phase = 'idle' | 'running' | 'done';
@@ -76,7 +76,7 @@ const INPUT_MODES: Array<{
     id: 'reflection',
     label: '현재 학습 상황',
     hint: '이해한 내용·막힌 지점·궁금한 점',
-    placeholder: '예: 역전파의 계산 순서는 이해했지만, 왜 활성화 함수를 통과할 때 기울기가 작아지는지는 아직 헷갈립니다.',
+    placeholder: '',
   },
 ];
 
@@ -143,6 +143,15 @@ function normalizeWeakpointStatus(node: Node): Node {
   return node.comments.some((comment) => comment.weakpoint)
     ? { ...node, status: 'weak' }
     : node;
+}
+
+function restoreGraphNodes(graph: ContractGraph): RuntimeNode[] {
+  const laidOut = withLayout(graph.nodes, graph.edges, graph.chapters);
+  const rawById = new Map(graph.nodes.map((node) => [node.id, normalizeWeakpointStatus(node)]));
+  return laidOut.map((node) => {
+    const raw = rawById.get(node.id);
+    return raw ? { ...raw, x: node.x, y: node.y } : node;
+  });
 }
 
 const NAMES = new Map<string, string>([
@@ -234,6 +243,7 @@ export default function App() {
   const [studyMode, setStudyMode] = useState(false);
   // 목 코멘트는 쓰지 않는다. 실제 node.comments 가 noteBundle 을 통해 들어온다.
   const [noteComments, setNoteComments] = useState<RuntimeNoteComment[]>([]);
+  const [noteCommentHighlightOverrides, setNoteCommentHighlightOverrides] = useState<Record<string, boolean>>({});
   const [noteContent, setNoteContent] = useState<Record<string, string>>(() => initialNoteContent());
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [pdfNote, setPdfNote] = useState<PdfNoteDocument | null>(null);
@@ -249,6 +259,10 @@ export default function App() {
   const [subjectAdding, setSubjectAdding] = useState(false);
   const [newSubjectName, setNewSubjectName] = useState('');
   const [subjectError, setSubjectError] = useState<string | null>(null);
+  const [undoAvailable, setUndoAvailable] = useState(false);
+  const [undoing, setUndoing] = useState(false);
+  const [redoAvailable, setRedoAvailable] = useState(false);
+  const [redoing, setRedoing] = useState(false);
 
   const lineId = useRef(0);
   const runToken = useRef(0);
@@ -257,6 +271,10 @@ export default function App() {
   const workspaceRef = useRef<HTMLElement | null>(null);
   const minimapDragRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null);
   const subjectViewsRef = useRef(new Map<string, { nodes: RuntimeNode[]; edges: RuntimeEdge[]; chapters: Chapter[] }>());
+  const undoViewSnapshotsRef = useRef(new Map<string, { nodes: RuntimeNode[]; edges: RuntimeEdge[]; chapters: Chapter[] }>());
+  const redoViewSnapshotsRef = useRef(new Map<string, { nodes: RuntimeNode[]; edges: RuntimeEdge[]; chapters: Chapter[] }>());
+  const serverUndoAvailableRef = useRef(false);
+  const serverRedoAvailableRef = useRef(false);
 
   useEffect(() => {
     void probeAgent().then(setAgent);
@@ -265,6 +283,24 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem(SUBJECTS_STORAGE_KEY, JSON.stringify(subjects));
   }, [subjects]);
+
+  useEffect(() => {
+    let cancelled = false;
+    serverUndoAvailableRef.current = false;
+    serverRedoAvailableRef.current = false;
+    setUndoAvailable(false);
+    setRedoAvailable(false);
+    void Promise.all([fetchUndoStatus(activeSubjectId), fetchRedoStatus(activeSubjectId)]).then(([undo, redo]) => {
+      if (cancelled) return;
+      const localUndo = undoViewSnapshotsRef.current.has(activeSubjectId);
+      const localRedo = redoViewSnapshotsRef.current.has(activeSubjectId);
+      serverUndoAvailableRef.current = !localUndo && !localRedo && undo;
+      serverRedoAvailableRef.current = !localUndo && !localRedo && redo;
+      setUndoAvailable(localUndo || (!localRedo && undo));
+      setRedoAvailable(localRedo || (!localUndo && redo));
+    });
+    return () => { cancelled = true; };
+  }, [activeSubjectId]);
 
   useEffect(() => {
     const syncFullscreen = () => setIsFullscreen(document.fullscreenElement === workspaceRef.current);
@@ -360,9 +396,16 @@ export default function App() {
     setPdfNote(null);
     setPdfError(null);
     setNoteComments([]);
+    setNoteCommentHighlightOverrides({});
     setNoteContent(initialNoteContent());
     setResolvedWeakpoints(new Set());
     setMinimapPosition({ x: 12, y: 12 });
+    setUndoAvailable(false);
+    setUndoing(false);
+    setRedoAvailable(false);
+    setRedoing(false);
+    serverUndoAvailableRef.current = false;
+    serverRedoAvailableRef.current = false;
   };
 
   const switchSubject = async (subjectId: string) => {
@@ -425,6 +468,7 @@ export default function App() {
     setPdfNote(null);
     setPdfError(null);
     setNoteComments([]);
+    setNoteCommentHighlightOverrides({});
     setNoteContent(initialNoteContent());
     setResolvedWeakpoints(new Set());
     setMinimapPosition({ x: 12, y: 12 });
@@ -442,10 +486,12 @@ export default function App() {
   const addNoteComment = (comment: RuntimeNoteComment) =>
     setNoteComments((previous) => [...previous, comment]);
 
-  const toggleCommentHighlight = (commentId: string, highlighted: boolean) =>
+  const toggleCommentHighlight = (commentId: string, highlighted: boolean) => {
+    setNoteCommentHighlightOverrides((previous) => ({ ...previous, [commentId]: highlighted }));
     setNoteComments((previous) =>
       previous.map((comment) => (comment.id === commentId ? { ...comment, highlighted } : comment)),
     );
+  };
 
   const updateNoteComment = (commentId: string, title: string, body: string) =>
     setNoteComments((previous) =>
@@ -460,10 +506,132 @@ export default function App() {
   const deleteNoteComment = (commentId: string) =>
     setNoteComments((previous) => previous.filter((comment) => comment.id !== commentId));
 
+  const undoLearningRun = async () => {
+    if (!undoAvailable || undoing || phase === 'running') return;
+    setUndoing(true);
+    setInputError(null);
+    const usingServer = serverUndoAvailableRef.current;
+    try {
+      let restored: { nodes: RuntimeNode[]; edges: RuntimeEdge[]; chapters: Chapter[] };
+      if (usingServer) {
+        const graph = await undoLastRun(activeSubjectId);
+        restored = graph
+          ? {
+              nodes: restoreGraphNodes(graph),
+              edges: graph.edges.map((edge) => ({ ...edge })),
+              chapters: graph.chapters,
+            }
+          : { nodes: [], edges: [], chapters: [] };
+      } else {
+        const snapshot = undoViewSnapshotsRef.current.get(activeSubjectId);
+        if (!snapshot) throw new Error('취소할 마지막 실행이 없습니다.');
+        redoViewSnapshotsRef.current.set(activeSubjectId, {
+          nodes: nodes.map((node) => ({ ...node })),
+          edges: edges.map((edge) => ({ ...edge })),
+          chapters,
+        });
+        restored = {
+          nodes: snapshot.nodes.map((node) => ({ ...node })),
+          edges: snapshot.edges.map((edge) => ({ ...edge })),
+          chapters: snapshot.chapters,
+        };
+        undoViewSnapshotsRef.current.delete(activeSubjectId);
+      }
+
+      setNodes(restored.nodes);
+      setEdges(restored.edges);
+      setChapters(restored.chapters);
+      subjectViewsRef.current.set(activeSubjectId, restored);
+      setSelectedId(null);
+      setDocNote(false);
+      setNoteMode(false);
+      setStudyMode(false);
+      setNoteComments([]);
+      setNoteCommentHighlightOverrides({});
+      setResolvedWeakpoints(new Set());
+      setPhase('idle');
+      setActiveStep(-1);
+      setPipelineSteps([]);
+      setPasted('');
+      setLines([]);
+      lineId.current = 0;
+      push('system', '마지막 학습 기록을 취소하고 실행 전 그래프로 복원했습니다.');
+      setUndoAvailable(false);
+      serverUndoAvailableRef.current = false;
+      setRedoAvailable(true);
+      serverRedoAvailableRef.current = usingServer;
+    } catch (error) {
+      setInputError(error instanceof Error ? error.message : '마지막 실행을 취소하지 못했습니다.');
+    } finally {
+      setUndoing(false);
+    }
+  };
+
+  const redoLearningRun = async () => {
+    if (!redoAvailable || redoing || phase === 'running') return;
+    setRedoing(true);
+    setInputError(null);
+    const usingServer = serverRedoAvailableRef.current;
+    try {
+      let restored: { nodes: RuntimeNode[]; edges: RuntimeEdge[]; chapters: Chapter[] };
+      if (usingServer) {
+        const graph = await redoLastRun(activeSubjectId);
+        restored = graph
+          ? {
+              nodes: restoreGraphNodes(graph),
+              edges: graph.edges.map((edge) => ({ ...edge })),
+              chapters: graph.chapters,
+            }
+          : { nodes: [], edges: [], chapters: [] };
+      } else {
+        const snapshot = redoViewSnapshotsRef.current.get(activeSubjectId);
+        if (!snapshot) throw new Error('되돌릴 실행 취소가 없습니다.');
+        undoViewSnapshotsRef.current.set(activeSubjectId, {
+          nodes: nodes.map((node) => ({ ...node })),
+          edges: edges.map((edge) => ({ ...edge })),
+          chapters,
+        });
+        restored = {
+          nodes: snapshot.nodes.map((node) => ({ ...node })),
+          edges: snapshot.edges.map((edge) => ({ ...edge })),
+          chapters: snapshot.chapters,
+        };
+        redoViewSnapshotsRef.current.delete(activeSubjectId);
+      }
+
+      setNodes(restored.nodes);
+      setEdges(restored.edges);
+      setChapters(restored.chapters);
+      subjectViewsRef.current.set(activeSubjectId, restored);
+      setSelectedId(null);
+      setDocNote(false);
+      setNoteMode(false);
+      setStudyMode(false);
+      setNoteComments([]);
+      setNoteCommentHighlightOverrides({});
+      setResolvedWeakpoints(new Set());
+      setPhase('idle');
+      setActiveStep(-1);
+      setPipelineSteps([]);
+      setPasted('');
+      setLines([]);
+      lineId.current = 0;
+      push('system', '실행 취소를 되돌려 취소 전 그래프로 복원했습니다.');
+      setRedoAvailable(false);
+      serverRedoAvailableRef.current = false;
+      setUndoAvailable(true);
+      serverUndoAvailableRef.current = usingServer;
+    } catch (error) {
+      setInputError(error instanceof Error ? error.message : '실행 취소를 되돌리지 못했습니다.');
+    } finally {
+      setRedoing(false);
+    }
+  };
+
   const openNote = (nodeId: string) => {
     setStudyMode(false);
-    setSelectedId(nodeId);
-    setActiveNoteAnchor(noteBundle?.anchorOf[nodeId] ?? '');
+    const anchorId = noteBundle?.anchorOf[nodeId] ?? '';
+    navigateInNote(nodeId, anchorId);
     setDocNote(true);
   };
 
@@ -627,6 +795,13 @@ export default function App() {
         if (!alive()) return;
         finishLivePipeline();
         setPhase('done');
+        void Promise.all([fetchUndoStatus(activeSubjectId), fetchRedoStatus(activeSubjectId)]).then(([undo, redo]) => {
+          if (!alive()) return;
+          serverUndoAvailableRef.current = undo;
+          serverRedoAvailableRef.current = redo;
+          setUndoAvailable(undo);
+          setRedoAvailable(redo);
+        });
         if (!graphMutationObserved) {
           push('system', '분석 완료 — 그래프에 반영할 학습 정보가 없습니다.');
           return;
@@ -664,6 +839,10 @@ export default function App() {
           });
           setEdges(graph.edges.map((edge) => ({ ...edge })));
           setChapters(graph.chapters);
+          serverUndoAvailableRef.current = true;
+          setUndoAvailable(true);
+          serverRedoAvailableRef.current = false;
+          setRedoAvailable(false);
           push('system', `실행 완료 — 노드 ${graph.nodes.length}개 / 간선 ${graph.edges.length}개`);
         });
       },
@@ -672,6 +851,13 @@ export default function App() {
         finishLivePipeline();
         push('system', `실행 실패 — ${message}`);
         setPhase('done');
+        void Promise.all([fetchUndoStatus(activeSubjectId), fetchRedoStatus(activeSubjectId)]).then(([undo, redo]) => {
+          if (!alive()) return;
+          serverUndoAvailableRef.current = undo;
+          serverRedoAvailableRef.current = redo;
+          setUndoAvailable(undo);
+          setRedoAvailable(redo);
+        });
       },
     }, activeSubjectId);
   };
@@ -703,6 +889,14 @@ export default function App() {
     const token = ++runToken.current;
     const alive = () => runToken.current === token;
 
+    undoViewSnapshotsRef.current.set(activeSubjectId, {
+      nodes: nodes.map((node) => ({ ...node })),
+      edges: edges.map((edge) => ({ ...edge })),
+      chapters,
+    });
+    redoViewSnapshotsRef.current.delete(activeSubjectId);
+    serverRedoAvailableRef.current = false;
+    setRedoAvailable(false);
     setPipelineSteps([]);
     setPasted(text);
     setPhase('running');
@@ -862,6 +1056,8 @@ export default function App() {
     push('done', `실행 완료 — 노드 ${INITIAL_NODES.length + 3}개 / 간선 ${INITIAL_EDGES.length + 8}개`);
     setActiveStep(6);
     setPhase('done');
+    serverUndoAvailableRef.current = false;
+    setUndoAvailable(true);
   };
 
   const selectInputMode = (mode: LearningInputMode) => {
@@ -1027,7 +1223,14 @@ export default function App() {
             <NoteWorkspace
               activeAnchorId={activeNoteAnchor}
               annotationsVisible
-              comments={[...(noteBundle?.comments ?? []), ...noteComments]}
+              comments={[
+                ...(noteBundle?.comments ?? []).map((comment) =>
+                  Object.hasOwn(noteCommentHighlightOverrides, comment.id)
+                    ? { ...comment, highlighted: noteCommentHighlightOverrides[comment.id] }
+                    : comment,
+                ),
+                ...noteComments,
+              ]}
               edges={edges}
               navigationVersion={noteNavigationVersion}
               noteContent={{ ...noteBundle.noteContent, ...noteContent }}
@@ -1141,6 +1344,22 @@ export default function App() {
               <div className="ml-auto flex items-center gap-3 text-[10px]">
                 {inputMode === 'conversation' && phase === 'idle' && (
                   <button onClick={() => { setPasted(SAMPLE_CONVERSATION); void run(SAMPLE_CONVERSATION); }} className="border-b border-[#255c99] pb-0.5 font-bold text-[#255c99]">샘플 기록 실행</button>
+                )}
+                {undoAvailable && (
+                  <button
+                    type="button"
+                    disabled={phase === 'running' || undoing || redoing}
+                    onClick={() => void undoLearningRun()}
+                    className="border-b border-[#255c99] pb-0.5 font-bold text-[#255c99] disabled:cursor-wait disabled:opacity-40"
+                  >{undoing ? '취소 중…' : '↶ 실행 취소'}</button>
+                )}
+                {redoAvailable && (
+                  <button
+                    type="button"
+                    disabled={phase === 'running' || undoing || redoing}
+                    onClick={() => void redoLearningRun()}
+                    className="border-b border-[#255c99] pb-0.5 font-bold text-[#255c99] disabled:cursor-wait disabled:opacity-40"
+                  >{redoing ? '복원 중…' : '↷ 다시 실행'}</button>
                 )}
                 {phase !== 'idle' && (
                   <button onClick={reset} className="border-b border-[#d85b35] pb-0.5 font-bold text-[#9f4025]">초기화</button>

@@ -37,6 +37,60 @@ export async function fetchGraph(subjectId = 'deep-learning'): Promise<Graph | n
   }
 }
 
+export async function fetchUndoStatus(subjectId = 'deep-learning'): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/agent/undo?subjectId=${encodeURIComponent(subjectId)}`);
+    if (!res.ok) return false;
+    const body = await res.json() as { available?: boolean };
+    return body.available === true;
+  } catch {
+    return false;
+  }
+}
+
+export async function undoLastRun(subjectId = 'deep-learning'): Promise<Graph | null> {
+  let res: Response;
+  try {
+    res = await fetch('/api/agent/undo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subjectId }),
+    });
+  } catch {
+    throw new Error('개발 서버에 연결할 수 없습니다.');
+  }
+  const body = await res.json() as { graph?: Graph | null; error?: string };
+  if (!res.ok) throw new Error(body.error ?? '마지막 실행을 취소하지 못했습니다.');
+  return body.graph ?? null;
+}
+
+export async function fetchRedoStatus(subjectId = 'deep-learning'): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/agent/redo?subjectId=${encodeURIComponent(subjectId)}`);
+    if (!res.ok) return false;
+    const body = await res.json() as { available?: boolean };
+    return body.available === true;
+  } catch {
+    return false;
+  }
+}
+
+export async function redoLastRun(subjectId = 'deep-learning'): Promise<Graph | null> {
+  let res: Response;
+  try {
+    res = await fetch('/api/agent/redo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subjectId }),
+    });
+  } catch {
+    throw new Error('개발 서버에 연결할 수 없습니다.');
+  }
+  const body = await res.json() as { graph?: Graph | null; error?: string };
+  if (!res.ok) throw new Error(body.error ?? '실행 취소를 되돌리지 못했습니다.');
+  return body.graph ?? null;
+}
+
 /**
  * ChatGPT 공유 링크에서 대화를 가져온다.
  * 브라우저가 직접 chatgpt.com 을 부르면 CORS 에 막히므로 개발 서버가 대신 받는다.

@@ -38,7 +38,6 @@ export default function NodeDetail({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 text-[9px] font-black tracking-[0.16em] text-[#77736a]">
             <span>CONCEPT CARD</span>
-            <span>№ {node.id.slice(0, 12).toUpperCase()}</span>
           </div>
           <h2 className="mt-3 text-[24px] leading-[1.05] font-black tracking-[-0.035em] text-[#262624]">{node.name}</h2>
           <div className="mt-2 flex items-center gap-2">

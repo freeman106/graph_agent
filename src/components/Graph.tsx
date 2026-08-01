@@ -75,7 +75,8 @@ export default function Graph({ nodes, edges, selectedId, noteIds, filter, compa
   const viewBoxRef = useRef<ViewBox>(FULL_VIEW);
   const animationFrame = useRef<number | null>(null);
   const byId = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
-  const focusId = hoverId ?? selectedId;
+  // 선택된 노드가 있으면 hover가 상세 카드의 포커스를 덮어쓰지 않는다.
+  const focusId = selectedId ?? hoverId;
 
   useEffect(() => {
     const selected = selectedId ? byId.get(selectedId) : null;
@@ -176,7 +177,26 @@ export default function Graph({ nodes, edges, selectedId, noteIds, filter, compa
     return ids;
   }, [edges, frontierIds]);
 
-  const hovered = hoverId ? byId.get(hoverId) : null;
+  const hovered = !selectedId && hoverId ? byId.get(hoverId) : null;
+  const hoverCard = hovered
+    ? (() => {
+        const width = 280;
+        const height = 116;
+        const gap = 24;
+        const inset = 12;
+        const left = viewBox.x + inset;
+        const right = viewBox.x + viewBox.width - inset;
+        const top = viewBox.y + inset;
+        const bottom = viewBox.y + viewBox.height - inset;
+        const preferredX = hovered.x + gap + width <= right
+          ? hovered.x + gap
+          : hovered.x - gap - width;
+        return {
+          x: Math.max(left, Math.min(preferredX, right - width)),
+          y: Math.max(top, Math.min(hovered.y - height / 2, bottom - height)),
+        };
+      })()
+    : null;
 
   return (
     <svg
@@ -290,11 +310,15 @@ export default function Graph({ nodes, edges, selectedId, noteIds, filter, compa
               aria-label={`${node.name} 노드 열기`}
               transform={`translate(${node.x},${node.y})`}
               opacity={node.removing ? 0 : dimmed ? 0.18 : 1}
-              className={node.removing ? 'fading' : undefined}
+              className={`graph-node ${node.removing ? 'fading' : ''}`}
               style={{ cursor: 'pointer', transition: 'opacity 160ms ease' }}
               onMouseEnter={() => setHoverId(node.id)}
               onMouseLeave={() => setHoverId(null)}
-              onClick={(event) => { event.stopPropagation(); onSelect(node.id); }}
+              onClick={(event) => {
+                event.stopPropagation();
+                setHoverId(null);
+                onSelect(node.id);
+              }}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' || event.key === ' ') {
                   event.preventDefault();
@@ -348,8 +372,8 @@ export default function Graph({ nodes, edges, selectedId, noteIds, filter, compa
         })}
       </g>
 
-      {hovered && !compact && (
-        <g transform="translate(738,586)" pointerEvents="none">
+      {hovered && hoverCard && !compact && (
+        <g transform={`translate(${hoverCard.x},${hoverCard.y})`} pointerEvents="none">
           <rect width="280" height="116" fill="#f1ede4" stroke="#262624" />
           <text x="14" y="21" fontSize="9" fontWeight="900" letterSpacing="1.4" fill="#77736a">CONCEPT INDEX</text>
           <text x="14" y="45" fontSize="15" fontWeight="900" fill="#262624">{hovered.name}</text>
