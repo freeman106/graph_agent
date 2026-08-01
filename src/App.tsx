@@ -1131,7 +1131,24 @@ export default function App() {
   return (
     <div className="app-shell flex h-screen min-w-[1120px] flex-col overflow-hidden text-[#20201e]">
       <header className="flex h-14 shrink-0 items-center border-b border-[#262624] bg-[#f3f0e8] px-5">
-        <div className="mr-4 grid h-7 w-7 place-items-center border border-[#262624] bg-[#262624] text-[12px] font-black text-[#f3f0e8]">GM</div>
+        <div className="mr-4 grid h-8 w-8 shrink-0 place-items-center border border-[#262624] bg-[#f7f5ef] shadow-[2px_2px_0_#d2cec4]">
+          <svg
+            viewBox="0 0 32 32"
+            className="h-7 w-7"
+            role="img"
+            aria-label="Graphmind 지식그래프 로고"
+          >
+            <path d="M7 8 16 6 25 11 18 19 8 24M7 8l11 11m-2-13 2 13m0 0 7 7M8 24l10-5" fill="none" stroke="#aaa59b" strokeWidth="1.25" />
+            <path d="M16 6 8 24" fill="none" stroke="#817c72" strokeWidth="1" strokeDasharray="2 2.5" />
+            <circle cx="7" cy="8" r="3.4" fill="#262624" stroke="#262624" strokeWidth="1.4" />
+            <circle cx="16" cy="6" r="3.1" fill="#f7f5ef" stroke="#817c72" strokeWidth="1.5" />
+            <rect x="21.8" y="7.8" width="6.4" height="6.4" rx="0.7" transform="rotate(45 25 11)" fill="#d85b35" stroke="#9f4025" strokeWidth="1.35" />
+            <circle cx="18" cy="19" r="3.7" fill="#a65f2b" stroke="#6f3518" strokeWidth="1.5" />
+            <circle cx="8" cy="24" r="3.2" fill="#f7f5ef" stroke="#255c99" strokeWidth="1.5" />
+            <circle cx="25" cy="26" r="3" fill="#262624" stroke="#262624" strokeWidth="1.4" />
+            <circle cx="26.3" cy="7.1" r="1.35" fill="#f7f5ef" stroke="#d85b35" strokeWidth="1" />
+          </svg>
+        </div>
         <div className="flex items-baseline gap-3">
           <h1 className="text-[15px] font-black tracking-[-0.02em]">GRAPHMIND</h1>
           <span className="text-[10px] font-semibold tracking-[0.18em] text-[#77736a]">개인 지식 지도</span>
