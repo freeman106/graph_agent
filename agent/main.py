@@ -116,7 +116,21 @@ async def run(conv: Conversation, writer: StreamWriter) -> None:
 
     # call_id -> tool_name. 결과를 못 본 호출이 곧 "미처리"다.
     pending: dict[str, str] = {}
-    last_rationale: str | None = None
+
+    # 근거(message)와 툴 호출(tool_called)이 오는 순서는 하부 스트림에 따라 다르다.
+    # 실제 OpenAI 스트리밍에서는 툴 호출이 먼저다 — SDK 가 툴 호출은 스트림 도중에
+    # 바로 내보내고(run_loop), 메시지는 턴이 끝난 뒤에 내보내기 때문이다(streaming).
+    # 반대로 output_item.done 을 주지 않는 백엔드에서는 메시지가 먼저 온다.
+    # 어느 쪽이든 "툴 호출에는 같은 턴의 근거가 붙는다" 가 유지되게 한다:
+    #   근거가 아직 없으면 툴 호출을 잡아뒀다가 근거가 나오면 그 뒤에 내보내고,
+    #   근거를 이미 봤으면 바로 내보낸다. 턴이 끝나면(tool_result) 근거를 버린다.
+    buffered: list[tuple[str, dict, object]] = []
+    turn_rationale: str | None = None
+
+    def flush(rationale: str | None) -> None:
+        for name, args, raw in buffered:
+            writer.emit("tool_call", tool=name, args=args, rationale=rationale, raw=raw)
+        buffered.clear()
 
     try:
         async for event in result.stream_events():
@@ -134,24 +148,32 @@ async def run(conv: Conversation, writer: StreamWriter) -> None:
             if event.name == "message_output_created":
                 text = ItemHelpers.text_message_output(item).strip()
                 if text:
-                    last_rationale = text
                     writer.emit("decision", rationale=text, raw=item.raw_item)
+                    turn_rationale = text
+                    flush(text)
 
             # ── 툴 호출 ──
             elif event.name == "tool_called":
                 name = item.tool_name or "unknown"
                 call_id = item.call_id or f"call-{writer._seq}"
                 pending[call_id] = name
-                writer.emit(
-                    "tool_call",
-                    tool=name,
-                    args=_extract_args(item.raw_item),
-                    rationale=last_rationale,
-                    raw=item.raw_item,
-                )
+                args = _extract_args(item.raw_item)
+                if turn_rationale is None:
+                    buffered.append((name, args, item.raw_item))
+                else:
+                    writer.emit(
+                        "tool_call",
+                        tool=name,
+                        args=args,
+                        rationale=turn_rationale,
+                        raw=item.raw_item,
+                    )
 
-            # ── 툴 반환 ──
+            # ── 툴 반환 ── 여기서 턴이 끝난다
             elif event.name == "tool_output":
+                # 근거 없이 툴만 부른 턴. 근거를 지어내지 않고 비워서 내보낸다.
+                flush(None)
+                turn_rationale = None
                 call_id = item.call_id or ""
                 name = pending.pop(call_id, "unknown")
                 writer.emit(
@@ -162,6 +184,8 @@ async def run(conv: Conversation, writer: StreamWriter) -> None:
                 )
 
     except MaxTurnsExceeded:
+        # 보류 중인 호출을 삼키지 않는다 — 상한에 걸린 순간을 그대로 보여준다.
+        flush(None)
         payload = LimitPayload(
             steps_used=result.current_turn,
             max_steps=MAX_STEPS,
@@ -178,6 +202,7 @@ async def run(conv: Conversation, writer: StreamWriter) -> None:
         )
         return
 
+    flush(None)
     final = (result.final_output or "").strip()
     writer.emit("note", result_summary=f"실행 완료 — {result.current_turn} 스텝")
     if final:
